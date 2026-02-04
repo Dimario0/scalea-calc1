@@ -14,60 +14,87 @@
             background-attachment: fixed;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             -webkit-tap-highlight-color: transparent;
-            padding-bottom: 90px; /* Увеличил отступ для мобильного меню */
+            /* Отступ снизу, чтобы контент не перекрывался меню на айфонах */
+            padding-bottom: 120px; 
         }
+        
+        /* Затемняющая подложка для читаемости */
         body::before {
             content: ''; position: fixed; inset: 0;
-            background: rgba(15, 23, 42, 0.25); z-index: -1;
+            background: rgba(15, 23, 42, 0.3); z-index: -1;
         }
 
-        /* === GLASS UI === */
+        /* === ЭФФЕКТ СТЕКЛА (GLASS UI) === */
         .glass {
-            background: rgba(255, 255, 255, 0.94);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
         }
         .glass-dark {
             background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(12px);
+            backdrop-filter: blur(16px);
             color: white;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
         }
 
         /* === КАЛЕНДАРЬ === */
-        .day-cell { min-height: 100px; border-right: 1px solid rgba(0,0,0,0.04); border-bottom: 1px solid rgba(0,0,0,0.04); transition: 0.2s; }
-        .day-today { background: rgba(254, 243, 199, 0.6); }
-        .day-num { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; font-weight: 700; }
-        .day-today .day-num { background: #f59e0b; color: white; box-shadow: 0 2px 5px rgba(245, 158, 11, 0.4); }
+        .day-cell { 
+            min-height: 100px; 
+            border-right: 1px solid rgba(0,0,0,0.05); 
+            border-bottom: 1px solid rgba(0,0,0,0.05); 
+            transition: 0.2s; 
+        }
+        .day-today { background: rgba(254, 243, 199, 0.7); }
+        .day-num { 
+            width: 24px; height: 24px; 
+            display: flex; align-items: center; justify-content: center; 
+            border-radius: 50%; font-size: 11px; font-weight: 700; 
+        }
+        .day-today .day-num { 
+            background: #f59e0b; color: white; 
+            box-shadow: 0 2px 5px rgba(245, 158, 11, 0.4); 
+        }
 
-        /* === БРОНИРОВАНИЕ === */
+        /* === ПОЛОСКИ БРОНИРОВАНИЯ === */
         .booking-bar {
             height: 22px; font-size: 11px; display: flex; align-items: center; margin-bottom: 2px;
             cursor: pointer; font-weight: 600; position: relative; z-index: 10;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.1s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: transform 0.1s;
         }
-        .booking-bar:active { transform: scale(0.98); }
-        .booking-start { background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border-radius: 6px 0 0 6px; padding-left: 6px; margin-right: -1px; }
-        .booking-mid { background: #93c5fd; color: transparent; opacity: 0.8; }
-        .booking-end { background: linear-gradient(135deg, #93c5fd, #2563eb); border-radius: 0 6px 6px 0; margin-left: -1px; }
-
-        /* === НАВИГАЦИЯ === */
-        .nav-btn { transition: all 0.2s; }
-        .nav-btn:active { transform: scale(0.9); }
+        .booking-bar:active { transform: scale(0.97); }
         
-        /* Мобильное меню */
-        .mobile-nav { display: none; }
-        @media (max-width: 768px) {
-            .mobile-nav { display: grid; }
-            .desktop-sidebar { display: none; }
-            .day-cell { min-height: 80px; }
-            body { padding: 10px 10px 100px 10px; }
+        .booking-start { 
+            background: linear-gradient(135deg, #2563eb, #3b82f6); 
+            color: white; border-radius: 6px 0 0 6px; 
+            padding-left: 6px; margin-right: -1px; 
+        }
+        .booking-mid { 
+            background: #bfdbfe; color: transparent; opacity: 0.9; 
+        }
+        .booking-end { 
+            background: linear-gradient(135deg, #bfdbfe, #2563eb); 
+            border-radius: 0 6px 6px 0; margin-left: -1px; 
         }
 
-        /* Анимации */
-        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        /* === МОБИЛЬНАЯ АДАПТАЦИЯ === */
+        .mobile-nav { display: none; }
+        
+        @media (max-width: 1024px) {
+            .mobile-nav { display: grid; }
+            .day-cell { min-height: 80px; }
+            body { padding: 12px 12px 120px 12px; }
+            
+            /* Скрываем десктопные элементы принудительно */
+            .desktop-only { display: none !important; }
+        }
+
+        /* Анимации появления */
+        @keyframes slideUp { 
+            from { transform: translateY(100%); opacity: 0; } 
+            to { transform: translateY(0); opacity: 1; } 
+        }
         .modal-animate { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     </style>
 </head>
@@ -76,49 +103,49 @@
     <div class="max-w-7xl mx-auto h-full">
         
         <header class="glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
                 <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Scalea<span class="text-blue-600">.Calc</span></h1>
             </div>
             
             <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
-                <button id="prevMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500">
+                <button id="prevMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
                 </button>
-                <div class="px-2 text-center min-w-[120px] cursor-pointer" id="monthLabelGroup">
-                    <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">Январь</div>
-                    <div id="displayYear" class="text-[10px] font-bold text-slate-400">2024</div>
+                <div class="px-2 text-center min-w-[110px] select-none">
+                    <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">...</div>
+                    <div id="displayYear" class="text-[10px] font-bold text-slate-400">...</div>
                 </div>
-                <button id="nextMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500">
+                <button id="nextMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
                 </button>
             </div>
 
-            <button onclick="goToToday()" class="hidden md:block px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-slate-700 transition">
+            <button onclick="goToToday()" class="hidden lg:block px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-slate-700 transition">
                 Сегодня
             </button>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
             
-            <div id="sidebarPanel" class="lg:col-span-3 lg:block desktop-sidebar space-y-4">
+            <div id="sidebarPanel" class="hidden lg:block lg:col-span-3 space-y-4">
                 
-                <div class="glass p-5 rounded-3xl">
+                <div class="glass p-5 rounded-3xl relative">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xs font-black uppercase tracking-widest text-blue-600">Новая бронь</h3>
-                        <button onclick="toggleMobileView('calendar')" class="lg:hidden p-2 text-slate-400 bg-slate-100 rounded-full">✕</button>
+                        <button onclick="toggleMobileView('calendar')" class="lg:hidden p-2 text-slate-400 bg-slate-100 rounded-full hover:bg-slate-200">✕</button>
                     </div>
 
                     <form id="bookingForm" class="space-y-3">
-                        <input type="text" id="guestName" placeholder="Имя гостя" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold">
+                        <input type="text" id="guestName" placeholder="Имя гостя" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold placeholder:font-normal">
                         
                         <div class="grid grid-cols-2 gap-2">
                             <div class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200">
                                 <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Заезд</label>
-                                <input type="date" id="checkIn" class="w-full bg-transparent text-xs font-bold outline-none">
+                                <input type="date" id="checkIn" class="w-full bg-transparent text-xs font-bold outline-none text-slate-800">
                             </div>
                             <div class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200">
                                 <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Выезд</label>
-                                <input type="date" id="checkOut" class="w-full bg-transparent text-xs font-bold outline-none">
+                                <input type="date" id="checkOut" class="w-full bg-transparent text-xs font-bold outline-none text-slate-800">
                             </div>
                         </div>
 
@@ -133,14 +160,14 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2">
+                        <button type="submit" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2 text-sm">
                             <span>Добавить</span>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
                         </button>
                     </form>
                 </div>
 
-                <div class="glass-dark p-5 rounded-3xl text-white">
+                <div id="statsBlock" class="glass-dark p-5 rounded-3xl text-white">
                     <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Доход (Месяц)</h3>
                     <div class="flex justify-between items-baseline">
                         <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
@@ -152,7 +179,7 @@
                 </div>
 
                 <div class="glass p-4 rounded-3xl hidden lg:block">
-                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Сохранение</h3>
+                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">База данных</h3>
                     <div class="grid grid-cols-2 gap-2">
                         <button onclick="downloadBackup()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-xl transition gap-1 border border-transparent hover:border-emerald-200">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -175,7 +202,7 @@
 
             <div id="calendarView" class="lg:col-span-9 h-full">
                 <div class="glass rounded-3xl overflow-hidden shadow-sm min-h-[500px]">
-                    <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
+                    <div class="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200">
                         <div class="py-3 text-center text-[10px] font-black text-slate-400">ПН</div>
                         <div class="py-3 text-center text-[10px] font-black text-slate-400">ВТ</div>
                         <div class="py-3 text-center text-[10px] font-black text-slate-400">СР</div>
@@ -184,7 +211,7 @@
                         <div class="py-3 text-center text-[10px] font-black text-rose-400">СБ</div>
                         <div class="py-3 text-center text-[10px] font-black text-rose-400">ВС</div>
                     </div>
-                    <div id="calendarGrid" class="grid grid-cols-7 bg-white/50"></div>
+                    <div id="calendarGrid" class="grid grid-cols-7 bg-white/40"></div>
                 </div>
             </div>
         </div>
@@ -209,39 +236,39 @@
         </button>
     </div>
 
-    <div id="mobileDataModal" class="fixed inset-0 bg-white z-40 hidden flex-col modal-animate">
+    <div id="mobileDataModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
         <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg">Управление данными</h2>
+            <h2 class="font-black text-lg text-slate-800">Данные</h2>
             <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
         </div>
         <div class="p-6 flex flex-col gap-4 justify-center items-center flex-grow text-center">
-            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full">
+            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full active:scale-95 transition">
                 <h3 class="font-bold text-blue-800 mb-2">Скачать базу</h3>
-                <p class="text-xs text-blue-600 mb-4">Сохраните файл с вашими бронями на устройство</p>
+                <p class="text-xs text-blue-600 mb-4">Сохранить резервную копию</p>
                 <button onclick="downloadBackup()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg">Скачать .json</button>
             </div>
 
-            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 w-full">
+            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 w-full active:scale-95 transition">
                 <h3 class="font-bold text-slate-800 mb-2">Загрузить базу</h3>
-                <p class="text-xs text-slate-500 mb-4">Восстановить данные из файла (текущие будут заменены)</p>
+                <p class="text-xs text-slate-500 mb-4">Восстановить из файла</p>
                 <button onclick="document.getElementById('fileInputMobile').click()" class="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold">Выбрать файл</button>
                 <input type="file" id="fileInputMobile" class="hidden" accept=".json" onchange="uploadBackup(this)">
             </div>
         </div>
     </div>
 
-    <div id="mobilePricesModal" class="fixed inset-0 bg-white z-40 hidden flex-col modal-animate">
+    <div id="mobilePricesModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
         <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg">Настройка тарифов</h2>
+            <h2 class="font-black text-lg text-slate-800">Тарифы</h2>
             <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
         </div>
         <div class="p-4 overflow-y-auto flex-grow" id="mobilePricesList"></div>
-        <div class="p-4 border-t bg-white">
-            <button id="savePricesBtnMobile" class="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg">Сохранить</button>
+        <div class="p-4 border-t bg-white safe-area-bottom">
+            <button id="savePricesBtnMobile" class="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-200">Сохранить</button>
         </div>
     </div>
 
-    <div id="deleteModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div id="deleteModal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 modal-animate">
         <div class="glass p-6 rounded-3xl w-full max-w-xs shadow-2xl">
             <h3 class="text-lg font-bold text-center text-slate-800 mb-2">Удаление</h3>
             <div id="deleteModalInfo" class="bg-slate-50/50 p-4 rounded-xl text-center mb-6 border border-slate-100 text-sm"></div>
@@ -254,7 +281,7 @@
 
     <script>
         // === ЛОГИКА ===
-        const STORAGE_KEY = 'scalea_data_v4';
+        const STORAGE_KEY = 'scalea_data_v5';
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
 
@@ -279,31 +306,22 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookings: state.bookings, prices: state.prices }));
         }
 
-        // === БЭКАП ФУНКЦИИ (НОВОЕ) ===
+        // === БЭКАП ===
         function downloadBackup() {
-            // Создаем JSON файл
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ 
                 bookings: state.bookings, 
                 prices: state.prices 
             }));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            // Имя файла с датой
-            const dateStr = new Date().toISOString().slice(0,10);
-            downloadAnchorNode.setAttribute("download", `scalea_backup_${dateStr}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            const a = document.createElement('a');
+            a.href = dataStr;
+            a.download = `scalea_backup_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a); a.click(); a.remove();
         }
 
         function uploadBackup(input) {
             const file = input.files[0];
             if (!file) return;
-
-            if(!confirm("Внимание! Текущие данные будут заменены данными из файла. Продолжить?")) {
-                input.value = ''; // сброс
-                return;
-            }
+            if(!confirm("Заменить текущие данные данными из файла?")) { input.value = ''; return; }
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -312,62 +330,75 @@
                     if (data.bookings && Array.isArray(data.bookings)) {
                         state.bookings = data.bookings;
                         state.prices = data.prices || [...defaultPrices];
-                        save();
-                        render();
-                        alert("База успешно восстановлена!");
-                        // Закрыть мобильное окно если открыто
+                        save(); render();
+                        alert("Готово!");
                         toggleMobileView('calendar');
-                    } else {
-                        alert("Ошибка: Неверный формат файла.");
-                    }
-                } catch (error) {
-                    alert("Ошибка при чтении файла.");
-                }
+                    } else { alert("Ошибка формата файла"); }
+                } catch { alert("Ошибка чтения"); }
             };
             reader.readAsText(file);
-            input.value = ''; // сброс, чтобы можно было выбрать тот же файл снова
+            input.value = '';
         }
 
-        // === НАВИГАЦИЯ И UI ===
+        // === UI ПЕРЕКЛЮЧАТЕЛЬ ===
         function toggleMobileView(view) {
-            const sidebar = document.getElementById('sidebarPanel');
-            const calendar = document.getElementById('calendarView');
-            const pricesModal = document.getElementById('mobilePricesModal');
-            const dataModal = document.getElementById('mobileDataModal');
-            
-            // Сброс иконок
-            ['navCal', 'navAdd', 'navPrices', 'navData'].forEach(id => document.getElementById(id).classList.remove('text-blue-400', 'text-slate-400'));
-            
-            // Скрываем все
-            sidebar.classList.add('hidden');
-            sidebar.classList.remove('lg:block');
-            calendar.classList.add('hidden');
-            pricesModal.classList.add('hidden'); pricesModal.classList.remove('flex');
-            dataModal.classList.add('hidden'); dataModal.classList.remove('flex');
+            const els = {
+                sidebar: document.getElementById('sidebarPanel'),
+                stats: document.getElementById('statsBlock'),
+                calendar: document.getElementById('calendarView'),
+                modals: {
+                    prices: document.getElementById('mobilePricesModal'),
+                    data: document.getElementById('mobileDataModal')
+                },
+                navs: ['navCal', 'navAdd', 'navPrices', 'navData']
+            };
 
-            // Активируем нужное
+            // Сброс стилей навигации
+            els.navs.forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('text-blue-400');
+                el.classList.add('text-slate-400');
+            });
+
+            // Скрытие всех панелей
+            els.sidebar.classList.add('hidden'); els.sidebar.classList.remove('lg:block');
+            els.calendar.classList.add('hidden');
+            els.modals.prices.classList.add('hidden'); els.modals.prices.classList.remove('flex');
+            els.modals.data.classList.add('hidden'); els.modals.data.classList.remove('flex');
+            
+            // Активация выбранной
             if (view === 'calendar') {
-                calendar.classList.remove('hidden');
+                els.calendar.classList.remove('hidden');
                 document.getElementById('navCal').classList.add('text-blue-400');
-                sidebar.classList.add('lg:block');
-            } else if (view === 'add') {
-                sidebar.classList.remove('hidden');
+                els.sidebar.classList.add('lg:block'); // Возвращаем сайдбар на десктопе
+                els.stats.classList.remove('hidden'); // Показываем статистику
+            } 
+            else if (view === 'add') {
+                els.sidebar.classList.remove('hidden');
+                if(window.innerWidth < 1024) els.stats.classList.add('hidden'); // Скрываем статистику на моб, чтобы влезла форма
                 document.getElementById('navAdd').classList.add('text-blue-400');
-            } else if (view === 'prices') {
+            } 
+            else if (view === 'prices') {
                 renderPricesList('mobilePricesList');
-                pricesModal.classList.remove('hidden'); pricesModal.classList.add('flex');
+                els.modals.prices.classList.remove('hidden'); els.modals.prices.classList.add('flex');
                 document.getElementById('navPrices').classList.add('text-blue-400');
-            } else if (view === 'data') {
-                dataModal.classList.remove('hidden'); dataModal.classList.add('flex');
+            } 
+            else if (view === 'data') {
+                els.modals.data.classList.remove('hidden'); els.modals.data.classList.add('flex');
                 document.getElementById('navData').classList.add('text-blue-400');
             }
         }
 
-        // Горячие клавиши
+        // === КАЛЕНДАРЬ И ЛОГИКА ===
+        
+        // Навигация по месяцам
+        document.getElementById('prevMonth').onclick = () => changeMonth(-1);
+        document.getElementById('nextMonth').onclick = () => changeMonth(1);
         document.addEventListener('keydown', (e) => {
-            if (e.target.tagName === 'INPUT') return;
-            if (e.key === 'ArrowLeft') changeMonth(-1);
-            if (e.key === 'ArrowRight') changeMonth(1);
+            if(e.target.tagName !== 'INPUT') {
+                if(e.key === 'ArrowLeft') changeMonth(-1);
+                if(e.key === 'ArrowRight') changeMonth(1);
+            }
         });
 
         function changeMonth(delta) {
@@ -376,41 +407,35 @@
             render();
         }
 
-        function goToToday() {
-            state.currentDate = new Date();
-            render();
-        }
+        function goToToday() { state.currentDate = new Date(); render(); }
 
-        // === ЖИВОЙ КАЛЬКУЛЯТОР ===
+        // Живой расчет цены
         function calculateTotal() {
             const start = document.getElementById('checkIn').valueAsDate;
             const end = document.getElementById('checkOut').valueAsDate;
             const price = Number(document.getElementById('price').value);
+            const el = document.getElementById('liveTotal');
             
             if (start && end && start < end) {
-                const nights = Math.round((end - start) / (1000 * 60 * 60 * 24));
-                const total = nights * price;
-                document.getElementById('liveTotal').innerText = `${total} €`;
-                document.getElementById('liveTotal').classList.add('text-emerald-500');
+                const nights = Math.round((end - start) / (86400000));
+                el.innerText = `${nights * price} €`;
+                el.classList.add('text-emerald-500');
             } else {
-                document.getElementById('liveTotal').innerText = `0 €`;
-                document.getElementById('liveTotal').classList.remove('text-emerald-500');
+                el.innerText = `0 €`;
+                el.classList.remove('text-emerald-500');
             }
         }
 
-        ['checkIn', 'checkOut', 'price'].forEach(id => {
-            document.getElementById(id).addEventListener('input', calculateTotal);
-        });
-
+        ['checkIn', 'checkOut', 'price'].forEach(id => document.getElementById(id).addEventListener('input', calculateTotal));
+        
         document.getElementById('checkIn').addEventListener('change', (e) => {
             if(e.target.valueAsDate) {
-                const m = e.target.valueAsDate.getMonth();
-                document.getElementById('price').value = state.prices[m];
+                document.getElementById('price').value = state.prices[e.target.valueAsDate.getMonth()];
                 calculateTotal();
             }
         });
 
-        // === РЕНДЕР КАЛЕНДАРЯ ===
+        // Рендер
         function render() {
             const year = state.currentDate.getFullYear();
             const month = state.currentDate.getMonth();
@@ -425,11 +450,8 @@
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const offset = firstDay === 0 ? 6 : firstDay - 1;
 
-            for(let i=0; i<offset; i++) {
-                const d = document.createElement('div');
-                d.className = 'day-cell bg-slate-50/30';
-                grid.appendChild(d);
-            }
+            // Пустые
+            for(let i=0; i<offset; i++) grid.appendChild(createDiv('day-cell bg-slate-50/20'));
 
             const todayStr = new Date().toISOString().split('T')[0];
 
@@ -437,17 +459,15 @@
                 const dateObj = new Date(year, month, d);
                 const dateStr = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
                 
-                const cell = document.createElement('div');
-                cell.className = `day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`;
+                const cell = createDiv(`day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
                 cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
 
                 state.bookings.forEach(b => {
                     if (dateStr >= b.checkIn && dateStr <= b.checkOut) {
-                        const nights = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/(1000*60*60*24));
+                        const nights = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/86400000);
                         const total = nights * b.price;
                         
-                        const bar = document.createElement('div');
-                        bar.className = 'booking-bar';
+                        const bar = createDiv('booking-bar');
                         bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
 
                         if (b.checkIn === dateStr) {
@@ -469,21 +489,18 @@
             renderPricesList('desktopPricesList');
         }
 
-        // === СТАТИСТИКА ===
+        function createDiv(cls) { const d = document.createElement('div'); d.className = cls; return d; }
+
         function updateStats() {
             const m = state.currentDate.getMonth();
             const y = state.currentDate.getFullYear();
-            let income = 0;
-            let occupied = 0;
+            let income = 0; let occupied = 0;
 
             state.bookings.forEach(b => {
                 let d = new Date(b.checkIn);
                 const end = new Date(b.checkOut);
                 while(d < end) {
-                    if(d.getMonth() === m && d.getFullYear() === y) {
-                        occupied++;
-                        income += b.price;
-                    }
+                    if(d.getMonth() === m && d.getFullYear() === y) { occupied++; income += b.price; }
                     d.setDate(d.getDate() + 1);
                 }
             });
@@ -494,89 +511,73 @@
             document.getElementById('statDays').innerText = `${occupied} ночей`;
         }
 
-        // === ТАРИФЫ ===
-        function renderPricesList(containerId) {
-            const container = document.getElementById(containerId);
-            if(!container) return;
-            container.innerHTML = '';
-            
+        // Тарифы
+        function renderPricesList(id) {
+            const c = document.getElementById(id);
+            if(!c) return;
+            c.innerHTML = '';
             monthNames.forEach((name, i) => {
-                const div = document.createElement('div');
-                div.className = `flex justify-between items-center p-2 rounded-lg ${i === state.currentDate.getMonth() ? 'bg-blue-50 border border-blue-200' : ''}`;
-                div.innerHTML = `
-                    <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
-                    <div class="flex items-center gap-1">
-                        <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
-                        <span class="text-[10px] text-slate-400">€</span>
-                    </div>
-                `;
-                container.appendChild(div);
+                const isActive = i === state.currentDate.getMonth();
+                c.innerHTML += `
+                    <div class="flex justify-between items-center p-2 rounded-lg ${isActive ? 'bg-blue-50 border border-blue-200' : ''}">
+                        <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
+                            <span class="text-[10px] text-slate-400">€</span>
+                        </div>
+                    </div>`;
             });
         }
 
-        function savePricesFromInputs() {
-            const inputs = document.querySelectorAll('.price-input');
-            inputs.forEach(inp => { state.prices[inp.dataset.idx] = Number(inp.value); });
+        function savePrices() {
+            document.querySelectorAll('.price-input').forEach(inp => state.prices[inp.dataset.idx] = Number(inp.value));
             save(); render();
-            if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) { toggleMobileView('calendar'); }
+            if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) toggleMobileView('calendar');
         }
-        
-        document.getElementById('savePricesBtnDesktop').onclick = savePricesFromInputs;
-        document.getElementById('savePricesBtnMobile').onclick = savePricesFromInputs;
+        document.getElementById('savePricesBtnDesktop').onclick = savePrices;
+        document.getElementById('savePricesBtnMobile').onclick = savePrices;
 
-        // === ОБРАБОТКА ФОРМЫ ===
+        // Отправка формы
         document.getElementById('bookingForm').onsubmit = (e) => {
             e.preventDefault();
-            const inDate = document.getElementById('checkIn').value;
-            const outDate = document.getElementById('checkOut').value;
+            const inD = document.getElementById('checkIn').value;
+            const outD = document.getElementById('checkOut').value;
             
-            if (!inDate || !outDate || inDate >= outDate) { alert("Ошибка в датах"); return; }
-            
-            const conflict = state.bookings.some(b => inDate < b.checkOut && outDate > b.checkIn);
-            if(conflict) { alert("Даты заняты!"); return; }
+            if (!inD || !outD || inD >= outD) { alert("Ошибка дат"); return; }
+            if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Даты заняты!"); return; }
 
             state.bookings.push({
                 id: Date.now().toString(),
                 guest: document.getElementById('guestName').value || 'Гость',
-                checkIn: inDate,
-                checkOut: outDate,
+                checkIn: inD, checkOut: outD,
                 price: Number(document.getElementById('price').value)
             });
 
             save(); render(); e.target.reset();
             document.getElementById('liveTotal').innerText = "0 €";
-            if(window.innerWidth < 768) toggleMobileView('calendar');
+            if(window.innerWidth < 1024) toggleMobileView('calendar');
         };
 
-        // === УДАЛЕНИЕ ===
+        // Удаление
         window.openDeleteModal = (id) => {
             state.bookingToDelete = id;
             const b = state.bookings.find(x => x.id === id);
             if(b) {
-                const nights = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/(1000*60*60*24));
+                const n = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/86400000);
                 document.getElementById('deleteModalInfo').innerHTML = `
                     <div class="font-black text-lg">${b.guest}</div>
-                    <div class="text-slate-500">${nights} ночей · ${nights * b.price} €</div>
-                `;
+                    <div class="text-slate-500">${n} ночей · ${n * b.price} €</div>`;
                 document.getElementById('deleteModal').classList.remove('hidden');
             }
         };
-
         window.closeDeleteModal = () => document.getElementById('deleteModal').classList.add('hidden');
-
         document.getElementById('confirmDeleteBtn').onclick = () => {
-            if(state.bookingToDelete) {
-                state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
-                save(); render(); closeDeleteModal();
-            }
+            state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
+            save(); render(); closeDeleteModal();
         };
 
         // Старт
-        document.getElementById('prevMonth').onclick = () => changeMonth(-1);
-        document.getElementById('nextMonth').onclick = () => changeMonth(1);
         render();
-
     </script>
 </body>
-
 </html>
