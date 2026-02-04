@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scalea Smart Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* === БАЗА И ФОН === */
+        body {
+            background-image: url('web_ready_bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            padding-bottom: 90px; /* Увеличил отступ для мобильного меню */
+        }
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.25); z-index: -1;
+        }
+
+        /* === GLASS UI === */
+        .glass {
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        .glass-dark {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(12px);
+            color: white;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        /* === КАЛЕНДАРЬ === */
+        .day-cell { min-height: 100px; border-right: 1px solid rgba(0,0,0,0.04); border-bottom: 1px solid rgba(0,0,0,0.04); transition: 0.2s; }
+        .day-today { background: rgba(254, 243, 199, 0.6); }
+        .day-num { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; font-weight: 700; }
+        .day-today .day-num { background: #f59e0b; color: white; box-shadow: 0 2px 5px rgba(245, 158, 11, 0.4); }
+
+        /* === БРОНИРОВАНИЕ === */
+        .booking-bar {
+            height: 22px; font-size: 11px; display: flex; align-items: center; margin-bottom: 2px;
+            cursor: pointer; font-weight: 600; position: relative; z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.1s;
+        }
+        .booking-bar:active { transform: scale(0.98); }
+        .booking-start { background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border-radius: 6px 0 0 6px; padding-left: 6px; margin-right: -1px; }
+        .booking-mid { background: #93c5fd; color: transparent; opacity: 0.8; }
+        .booking-end { background: linear-gradient(135deg, #93c5fd, #2563eb); border-radius: 0 6px 6px 0; margin-left: -1px; }
+
+        /* === НАВИГАЦИЯ === */
+        .nav-btn { transition: all 0.2s; }
+        .nav-btn:active { transform: scale(0.9); }
+        
+        /* Мобильное меню */
+        .mobile-nav { display: none; }
+        @media (max-width: 768px) {
+            .mobile-nav { display: grid; }
+            .desktop-sidebar { display: none; }
+            .day-cell { min-height: 80px; }
+            body { padding: 10px 10px 100px 10px; }
+        }
+
+        /* Анимации */
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-animate { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="max-w-7xl mx-auto h-full">
+        
+        <header class="glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
+            <div class="flex items-center gap-3">
+                <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Scalea<span class="text-blue-600">.Calc</span></h1>
+            </div>
+            
+            <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
+                <button id="prevMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+                </button>
+                <div class="px-2 text-center min-w-[120px] cursor-pointer" id="monthLabelGroup">
+                    <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">Январь</div>
+                    <div id="displayYear" class="text-[10px] font-bold text-slate-400">2024</div>
+                </div>
+                <button id="nextMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                </button>
+            </div>
+
+            <button onclick="goToToday()" class="hidden md:block px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-slate-700 transition">
+                Сегодня
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+            
+            <div id="sidebarPanel" class="lg:col-span-3 lg:block desktop-sidebar space-y-4">
+                
+                <div class="glass p-5 rounded-3xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-black uppercase tracking-widest text-blue-600">Новая бронь</h3>
+                        <button onclick="toggleMobileView('calendar')" class="lg:hidden p-2 text-slate-400 bg-slate-100 rounded-full">✕</button>
+                    </div>
+
+                    <form id="bookingForm" class="space-y-3">
+                        <input type="text" id="guestName" placeholder="Имя гостя" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold">
+                        
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200">
+                                <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Заезд</label>
+                                <input type="date" id="checkIn" class="w-full bg-transparent text-xs font-bold outline-none">
+                            </div>
+                            <div class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200">
+                                <label class="text-[9px] font-bold text-slate-400 uppercase block mb-1">Выезд</label>
+                                <input type="date" id="checkOut" class="w-full bg-transparent text-xs font-bold outline-none">
+                            </div>
+                        </div>
+
+                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center justify-between">
+                            <div>
+                                <label class="text-[9px] font-bold text-blue-400 uppercase block">Цена/ночь</label>
+                                <input type="number" id="price" class="w-16 bg-transparent text-sm font-black text-blue-700 outline-none border-b border-blue-200" value="0">
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[9px] font-bold text-blue-400 uppercase block">Итого</span>
+                                <span id="liveTotal" class="text-lg font-black text-blue-600">0 €</span>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2">
+                            <span>Добавить</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="glass-dark p-5 rounded-3xl text-white">
+                    <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Доход (Месяц)</h3>
+                    <div class="flex justify-between items-baseline">
+                        <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
+                        <div class="text-right">
+                            <div id="statOccupancy" class="text-lg font-bold text-emerald-400">0%</div>
+                            <div id="statDays" class="text-[10px] opacity-60">0 ночей</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass p-4 rounded-3xl hidden lg:block">
+                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Сохранение</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="downloadBackup()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-xl transition gap-1 border border-transparent hover:border-emerald-200">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            <span class="text-[9px] font-bold uppercase">Скачать</span>
+                        </button>
+                        <button onclick="document.getElementById('fileInputDesktop').click()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl transition gap-1 border border-transparent hover:border-blue-200">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                            <span class="text-[9px] font-bold uppercase">Загрузить</span>
+                        </button>
+                    </div>
+                    <input type="file" id="fileInputDesktop" class="hidden" accept=".json" onchange="uploadBackup(this)">
+                </div>
+
+                 <div class="glass p-4 rounded-3xl hidden lg:block">
+                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Базовые тарифы</h3>
+                    <div id="desktopPricesList" class="h-40 overflow-y-auto custom-scrollbar space-y-1 pr-1"></div>
+                    <button id="savePricesBtnDesktop" class="w-full mt-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition">Сохранить тарифы</button>
+                </div>
+            </div>
+
+            <div id="calendarView" class="lg:col-span-9 h-full">
+                <div class="glass rounded-3xl overflow-hidden shadow-sm min-h-[500px]">
+                    <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
+                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ПН</div>
+                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ВТ</div>
+                        <div class="py-3 text-center text-[10px] font-black text-slate-400">СР</div>
+                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ЧТ</div>
+                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ПТ</div>
+                        <div class="py-3 text-center text-[10px] font-black text-rose-400">СБ</div>
+                        <div class="py-3 text-center text-[10px] font-black text-rose-400">ВС</div>
+                    </div>
+                    <div id="calendarGrid" class="grid grid-cols-7 bg-white/50"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl z-50 grid-cols-4 p-1 border border-white/10">
+        <button onclick="toggleMobileView('calendar')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-blue-400" id="navCal">
+            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span class="text-[9px] font-bold">Календарь</span>
+        </button>
+        <button onclick="toggleMobileView('add')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navAdd">
+            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-[9px] font-bold">Бронь</span>
+        </button>
+        <button onclick="toggleMobileView('prices')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navPrices">
+            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-[9px] font-bold">Тарифы</span>
+        </button>
+        <button onclick="toggleMobileView('data')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navData">
+            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+            <span class="text-[9px] font-bold">База</span>
+        </button>
+    </div>
+
+    <div id="mobileDataModal" class="fixed inset-0 bg-white z-40 hidden flex-col modal-animate">
+        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
+            <h2 class="font-black text-lg">Управление данными</h2>
+            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
+        </div>
+        <div class="p-6 flex flex-col gap-4 justify-center items-center flex-grow text-center">
+            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full">
+                <h3 class="font-bold text-blue-800 mb-2">Скачать базу</h3>
+                <p class="text-xs text-blue-600 mb-4">Сохраните файл с вашими бронями на устройство</p>
+                <button onclick="downloadBackup()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg">Скачать .json</button>
+            </div>
+
+            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 w-full">
+                <h3 class="font-bold text-slate-800 mb-2">Загрузить базу</h3>
+                <p class="text-xs text-slate-500 mb-4">Восстановить данные из файла (текущие будут заменены)</p>
+                <button onclick="document.getElementById('fileInputMobile').click()" class="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold">Выбрать файл</button>
+                <input type="file" id="fileInputMobile" class="hidden" accept=".json" onchange="uploadBackup(this)">
+            </div>
+        </div>
+    </div>
+
+    <div id="mobilePricesModal" class="fixed inset-0 bg-white z-40 hidden flex-col modal-animate">
+        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
+            <h2 class="font-black text-lg">Настройка тарифов</h2>
+            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
+        </div>
+        <div class="p-4 overflow-y-auto flex-grow" id="mobilePricesList"></div>
+        <div class="p-4 border-t bg-white">
+            <button id="savePricesBtnMobile" class="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg">Сохранить</button>
+        </div>
+    </div>
+
+    <div id="deleteModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div class="glass p-6 rounded-3xl w-full max-w-xs shadow-2xl">
+            <h3 class="text-lg font-bold text-center text-slate-800 mb-2">Удаление</h3>
+            <div id="deleteModalInfo" class="bg-slate-50/50 p-4 rounded-xl text-center mb-6 border border-slate-100 text-sm"></div>
+            <div class="flex gap-3">
+                <button onclick="closeDeleteModal()" class="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition text-sm">Отмена</button>
+                <button id="confirmDeleteBtn" class="flex-1 py-3 font-bold bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition shadow-lg shadow-rose-200 text-sm">Удалить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === ЛОГИКА ===
+        const STORAGE_KEY = 'scalea_data_v4';
+        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
+
+        let state = {
+            bookings: [],
+            prices: [...defaultPrices],
+            currentDate: new Date(),
+            bookingToDelete: null
+        };
+
+        // Загрузка
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                state.bookings = parsed.bookings || [];
+                state.prices = parsed.prices || [...defaultPrices];
+            }
+        } catch (e) { console.error("Ошибка загрузки", e); }
+
+        function save() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookings: state.bookings, prices: state.prices }));
+        }
+
+        // === БЭКАП ФУНКЦИИ (НОВОЕ) ===
+        function downloadBackup() {
+            // Создаем JSON файл
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ 
+                bookings: state.bookings, 
+                prices: state.prices 
+            }));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            // Имя файла с датой
+            const dateStr = new Date().toISOString().slice(0,10);
+            downloadAnchorNode.setAttribute("download", `scalea_backup_${dateStr}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function uploadBackup(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            if(!confirm("Внимание! Текущие данные будут заменены данными из файла. Продолжить?")) {
+                input.value = ''; // сброс
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.bookings && Array.isArray(data.bookings)) {
+                        state.bookings = data.bookings;
+                        state.prices = data.prices || [...defaultPrices];
+                        save();
+                        render();
+                        alert("База успешно восстановлена!");
+                        // Закрыть мобильное окно если открыто
+                        toggleMobileView('calendar');
+                    } else {
+                        alert("Ошибка: Неверный формат файла.");
+                    }
+                } catch (error) {
+                    alert("Ошибка при чтении файла.");
+                }
+            };
+            reader.readAsText(file);
+            input.value = ''; // сброс, чтобы можно было выбрать тот же файл снова
+        }
+
+        // === НАВИГАЦИЯ И UI ===
+        function toggleMobileView(view) {
+            const sidebar = document.getElementById('sidebarPanel');
+            const calendar = document.getElementById('calendarView');
+            const pricesModal = document.getElementById('mobilePricesModal');
+            const dataModal = document.getElementById('mobileDataModal');
+            
+            // Сброс иконок
+            ['navCal', 'navAdd', 'navPrices', 'navData'].forEach(id => document.getElementById(id).classList.remove('text-blue-400', 'text-slate-400'));
+            
+            // Скрываем все
+            sidebar.classList.add('hidden');
+            sidebar.classList.remove('lg:block');
+            calendar.classList.add('hidden');
+            pricesModal.classList.add('hidden'); pricesModal.classList.remove('flex');
+            dataModal.classList.add('hidden'); dataModal.classList.remove('flex');
+
+            // Активируем нужное
+            if (view === 'calendar') {
+                calendar.classList.remove('hidden');
+                document.getElementById('navCal').classList.add('text-blue-400');
+                sidebar.classList.add('lg:block');
+            } else if (view === 'add') {
+                sidebar.classList.remove('hidden');
+                document.getElementById('navAdd').classList.add('text-blue-400');
+            } else if (view === 'prices') {
+                renderPricesList('mobilePricesList');
+                pricesModal.classList.remove('hidden'); pricesModal.classList.add('flex');
+                document.getElementById('navPrices').classList.add('text-blue-400');
+            } else if (view === 'data') {
+                dataModal.classList.remove('hidden'); dataModal.classList.add('flex');
+                document.getElementById('navData').classList.add('text-blue-400');
+            }
+        }
+
+        // Горячие клавиши
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            if (e.key === 'ArrowLeft') changeMonth(-1);
+            if (e.key === 'ArrowRight') changeMonth(1);
+        });
+
+        function changeMonth(delta) {
+            state.currentDate.setDate(1);
+            state.currentDate.setMonth(state.currentDate.getMonth() + delta);
+            render();
+        }
+
+        function goToToday() {
+            state.currentDate = new Date();
+            render();
+        }
+
+        // === ЖИВОЙ КАЛЬКУЛЯТОР ===
+        function calculateTotal() {
+            const start = document.getElementById('checkIn').valueAsDate;
+            const end = document.getElementById('checkOut').valueAsDate;
+            const price = Number(document.getElementById('price').value);
+            
+            if (start && end && start < end) {
+                const nights = Math.round((end - start) / (1000 * 60 * 60 * 24));
+                const total = nights * price;
+                document.getElementById('liveTotal').innerText = `${total} €`;
+                document.getElementById('liveTotal').classList.add('text-emerald-500');
+            } else {
+                document.getElementById('liveTotal').innerText = `0 €`;
+                document.getElementById('liveTotal').classList.remove('text-emerald-500');
+            }
+        }
+
+        ['checkIn', 'checkOut', 'price'].forEach(id => {
+            document.getElementById(id).addEventListener('input', calculateTotal);
+        });
+
+        document.getElementById('checkIn').addEventListener('change', (e) => {
+            if(e.target.valueAsDate) {
+                const m = e.target.valueAsDate.getMonth();
+                document.getElementById('price').value = state.prices[m];
+                calculateTotal();
+            }
+        });
+
+        // === РЕНДЕР КАЛЕНДАРЯ ===
+        function render() {
+            const year = state.currentDate.getFullYear();
+            const month = state.currentDate.getMonth();
+            
+            document.getElementById('displayMonth').innerText = monthNames[month];
+            document.getElementById('displayYear').innerText = year;
+
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const offset = firstDay === 0 ? 6 : firstDay - 1;
+
+            for(let i=0; i<offset; i++) {
+                const d = document.createElement('div');
+                d.className = 'day-cell bg-slate-50/30';
+                grid.appendChild(d);
+            }
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            for(let d=1; d<=daysInMonth; d++) {
+                const dateObj = new Date(year, month, d);
+                const dateStr = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                
+                const cell = document.createElement('div');
+                cell.className = `day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`;
+                cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
+
+                state.bookings.forEach(b => {
+                    if (dateStr >= b.checkIn && dateStr <= b.checkOut) {
+                        const nights = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/(1000*60*60*24));
+                        const total = nights * b.price;
+                        
+                        const bar = document.createElement('div');
+                        bar.className = 'booking-bar';
+                        bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
+
+                        if (b.checkIn === dateStr) {
+                            bar.classList.add('booking-start');
+                            bar.innerHTML = `<span class="truncate pr-1">${b.guest} (${total}€)</span>`;
+                        } else if (b.checkOut === dateStr) {
+                            bar.classList.add('booking-end');
+                            bar.innerHTML = '←';
+                        } else if (dateStr > b.checkIn && dateStr < b.checkOut) {
+                            bar.classList.add('booking-mid');
+                            bar.innerHTML = '&nbsp;';
+                        }
+                        if(bar.classList.length > 1) cell.appendChild(bar);
+                    }
+                });
+                grid.appendChild(cell);
+            }
+            updateStats();
+            renderPricesList('desktopPricesList');
+        }
+
+        // === СТАТИСТИКА ===
+        function updateStats() {
+            const m = state.currentDate.getMonth();
+            const y = state.currentDate.getFullYear();
+            let income = 0;
+            let occupied = 0;
+
+            state.bookings.forEach(b => {
+                let d = new Date(b.checkIn);
+                const end = new Date(b.checkOut);
+                while(d < end) {
+                    if(d.getMonth() === m && d.getFullYear() === y) {
+                        occupied++;
+                        income += b.price;
+                    }
+                    d.setDate(d.getDate() + 1);
+                }
+            });
+
+            const daysInM = new Date(y, m+1, 0).getDate();
+            document.getElementById('statIncome').innerText = `${income} €`;
+            document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
+            document.getElementById('statDays').innerText = `${occupied} ночей`;
+        }
+
+        // === ТАРИФЫ ===
+        function renderPricesList(containerId) {
+            const container = document.getElementById(containerId);
+            if(!container) return;
+            container.innerHTML = '';
+            
+            monthNames.forEach((name, i) => {
+                const div = document.createElement('div');
+                div.className = `flex justify-between items-center p-2 rounded-lg ${i === state.currentDate.getMonth() ? 'bg-blue-50 border border-blue-200' : ''}`;
+                div.innerHTML = `
+                    <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
+                    <div class="flex items-center gap-1">
+                        <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
+                        <span class="text-[10px] text-slate-400">€</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function savePricesFromInputs() {
+            const inputs = document.querySelectorAll('.price-input');
+            inputs.forEach(inp => { state.prices[inp.dataset.idx] = Number(inp.value); });
+            save(); render();
+            if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) { toggleMobileView('calendar'); }
+        }
+        
+        document.getElementById('savePricesBtnDesktop').onclick = savePricesFromInputs;
+        document.getElementById('savePricesBtnMobile').onclick = savePricesFromInputs;
+
+        // === ОБРАБОТКА ФОРМЫ ===
+        document.getElementById('bookingForm').onsubmit = (e) => {
+            e.preventDefault();
+            const inDate = document.getElementById('checkIn').value;
+            const outDate = document.getElementById('checkOut').value;
+            
+            if (!inDate || !outDate || inDate >= outDate) { alert("Ошибка в датах"); return; }
+            
+            const conflict = state.bookings.some(b => inDate < b.checkOut && outDate > b.checkIn);
+            if(conflict) { alert("Даты заняты!"); return; }
+
+            state.bookings.push({
+                id: Date.now().toString(),
+                guest: document.getElementById('guestName').value || 'Гость',
+                checkIn: inDate,
+                checkOut: outDate,
+                price: Number(document.getElementById('price').value)
+            });
+
+            save(); render(); e.target.reset();
+            document.getElementById('liveTotal').innerText = "0 €";
+            if(window.innerWidth < 768) toggleMobileView('calendar');
+        };
+
+        // === УДАЛЕНИЕ ===
+        window.openDeleteModal = (id) => {
+            state.bookingToDelete = id;
+            const b = state.bookings.find(x => x.id === id);
+            if(b) {
+                const nights = Math.round((new Date(b.checkOut) - new Date(b.checkIn))/(1000*60*60*24));
+                document.getElementById('deleteModalInfo').innerHTML = `
+                    <div class="font-black text-lg">${b.guest}</div>
+                    <div class="text-slate-500">${nights} ночей · ${nights * b.price} €</div>
+                `;
+                document.getElementById('deleteModal').classList.remove('hidden');
+            }
+        };
+
+        window.closeDeleteModal = () => document.getElementById('deleteModal').classList.add('hidden');
+
+        document.getElementById('confirmDeleteBtn').onclick = () => {
+            if(state.bookingToDelete) {
+                state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
+                save(); render(); closeDeleteModal();
+            }
+        };
+
+        // Старт
+        document.getElementById('prevMonth').onclick = () => changeMonth(-1);
+        document.getElementById('nextMonth').onclick = () => changeMonth(1);
+        render();
+
+    </script>
+</body>
+</html>
