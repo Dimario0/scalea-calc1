@@ -43,6 +43,7 @@
             border-right: 1px solid rgba(0,0,0,0.05); 
             border-bottom: 1px solid rgba(0,0,0,0.05); 
             transition: 0.2s; 
+            user-select: none;
         }
         .day-today { background: rgba(254, 243, 199, 0.7); }
         .day-num { 
@@ -79,6 +80,7 @@
         
         @media (max-width: 1024px) {
             .mobile-nav { 
+                /* Меню на мобильных выравнивается строго горизонтально с отступами снизу для iPhone */
                 display: grid; 
                 padding-bottom: calc(4px + env(safe-area-inset-bottom, 16px));
                 z-index: 999;
@@ -214,7 +216,7 @@
         </div>
     </div>
 
-    <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl p-1 border border-white/10">
+    <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl p-1 border border-white/10 grid grid-cols-4 gap-1">
         <button onclick="toggleMobileView('calendar')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-blue-400" id="navCal">
             <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             <span class="text-[9px] font-bold">Календарь</span>
@@ -382,7 +384,7 @@
             }
         }
 
-        // === НАВИГАЦИЯ В КАЛЕНДАРЕ ===
+        // === НАВИГАЦИЯ И СВАЙПЫ ===
         document.getElementById('prevMonth').onclick = () => changeMonth(-1);
         document.getElementById('nextMonth').onclick = () => changeMonth(1);
         document.addEventListener('keydown', (e) => {
@@ -400,15 +402,36 @@
 
         function goToToday() { state.currentDate = new Date(); render(); }
 
+        let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
+        const calendarZone = document.getElementById('calendarView');
+
+        calendarZone.addEventListener('touchstart', function(e) {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, {passive: true});
+
+        calendarZone.addEventListener('touchend', function(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            
+            const xDiff = touchEndX - touchStartX;
+            const yDiff = touchEndY - touchStartY;
+
+            // Защита от вертикального скролла (свайп должен быть горизонтальным)
+            if (Math.abs(xDiff) > Math.abs(yDiff) && Math.abs(xDiff) > 50) {
+                changeMonth(xDiff > 0 ? -1 : 1);
+            }
+        }, {passive: true});
+
         // === ИДЕАЛЬНАЯ ЛОГИКА ДАТ И ЦЕН ===
         const checkInInput = document.getElementById('checkIn');
         const checkOutInput = document.getElementById('checkOut');
         const priceInput = document.getElementById('price');
 
-        // Безопасное прибавление дней к строке YYYY-MM-DD
+        // Безопасное прибавление дней к строке YYYY-MM-DD (UTC)
         function addDaysToDateStr(dateStr, days) {
             const d = new Date(dateStr);
-            d.setUTCDate(d.getUTCDate() + days); // Используем только UTC, чтобы избежать смещений
+            d.setUTCDate(d.getUTCDate() + days); 
             return d.toISOString().split('T')[0];
         }
 
@@ -423,7 +446,7 @@
                 let nights = 0;
                 
                 while (current < end) {
-                    total += state.prices[current.getUTCMonth()]; // Только UTC
+                    total += state.prices[current.getUTCMonth()]; 
                     current.setUTCDate(current.getUTCDate() + 1);
                     nights++;
                 }
@@ -502,7 +525,6 @@
 
             for(let i=0; i<offset; i++) grid.appendChild(createDiv('day-cell bg-slate-50/20'));
 
-            // Правильное определение "сегодня" для корректной подсветки
             const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
             for(let d=1; d<=daysInMonth; d++) {
@@ -606,9 +628,8 @@
             });
 
             save(); render(); 
-            e.target.reset(); // Полностью очищаем форму
+            e.target.reset();
             
-            // Сбрасываем блокировки дат для новой брони
             document.getElementById('checkIn').max = '';
             document.getElementById('checkOut').min = '';
             document.getElementById('liveTotal').innerText = "0 €";
