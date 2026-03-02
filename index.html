@@ -14,6 +14,7 @@
             background-attachment: fixed;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             -webkit-tap-highlight-color: transparent;
+            /* Отступ снизу по умолчанию */
             padding-bottom: 120px; 
         }
         
@@ -43,7 +44,7 @@
             border-right: 1px solid rgba(0,0,0,0.05); 
             border-bottom: 1px solid rgba(0,0,0,0.05); 
             transition: 0.2s; 
-            user-select: none;
+            user-select: none; /* Защита от выделения текста при свайпах */
         }
         .day-today { background: rgba(254, 243, 199, 0.7); }
         .day-num { 
@@ -80,7 +81,7 @@
         
         @media (max-width: 1024px) {
             .mobile-nav { 
-                /* Меню на мобильных выравнивается строго горизонтально с отступами снизу для iPhone */
+                /* Горизонтальная сетка для мобильного меню */
                 display: grid; 
                 padding-bottom: calc(4px + env(safe-area-inset-bottom, 16px));
                 z-index: 999;
@@ -217,21 +218,21 @@
     </div>
 
     <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl p-1 border border-white/10 grid grid-cols-4 gap-1">
-        <button onclick="toggleMobileView('calendar')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-blue-400" id="navCal">
-            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            <span class="text-[9px] font-bold">Календарь</span>
+        <button onclick="toggleMobileView('calendar')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-blue-400 gap-1.5" id="navCal">
+            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Календарь</span>
         </button>
-        <button onclick="toggleMobileView('add')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navAdd">
-            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <span class="text-[9px] font-bold">Бронь</span>
+        <button onclick="toggleMobileView('add')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navAdd">
+            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Бронь</span>
         </button>
-        <button onclick="toggleMobileView('prices')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navPrices">
-            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <span class="text-[9px] font-bold">Тарифы</span>
+        <button onclick="toggleMobileView('prices')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navPrices">
+            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Тарифы</span>
         </button>
-        <button onclick="toggleMobileView('data')" class="flex flex-col items-center justify-center py-2 rounded-xl transition active:bg-white/10 text-slate-400" id="navData">
-            <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
-            <span class="text-[9px] font-bold">База</span>
+        <button onclick="toggleMobileView('data')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navData">
+            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">База</span>
         </button>
     </div>
 
@@ -279,7 +280,7 @@
     </div>
 
     <script>
-        // === БАЗОВАЯ ЛОГИКА ===
+        // === БАЗОВАЯ ЛОГИКА И ДАННЫЕ ===
         const STORAGE_KEY = 'scalea_data_v5';
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
@@ -329,10 +330,10 @@
                         state.bookings = data.bookings;
                         state.prices = data.prices || [...defaultPrices];
                         save(); render();
-                        alert("Готово!");
+                        alert("Успешно загружено!");
                         toggleMobileView('calendar');
                     } else { alert("Ошибка формата файла"); }
-                } catch { alert("Ошибка чтения"); }
+                } catch { alert("Ошибка чтения файла"); }
             };
             reader.readAsText(file);
             input.value = '';
@@ -395,269 +396,4 @@
         });
 
         function changeMonth(delta) {
-            state.currentDate.setDate(1); 
-            state.currentDate.setMonth(state.currentDate.getMonth() + delta);
-            render();
-        }
-
-        function goToToday() { state.currentDate = new Date(); render(); }
-
-        let touchStartX = 0, touchStartY = 0, touchEndX = 0, touchEndY = 0;
-        const calendarZone = document.getElementById('calendarView');
-
-        calendarZone.addEventListener('touchstart', function(e) {
-            touchStartX = e.changedTouches[0].screenX;
-            touchStartY = e.changedTouches[0].screenY;
-        }, {passive: true});
-
-        calendarZone.addEventListener('touchend', function(e) {
-            touchEndX = e.changedTouches[0].screenX;
-            touchEndY = e.changedTouches[0].screenY;
-            
-            const xDiff = touchEndX - touchStartX;
-            const yDiff = touchEndY - touchStartY;
-
-            // Защита от вертикального скролла (свайп должен быть горизонтальным)
-            if (Math.abs(xDiff) > Math.abs(yDiff) && Math.abs(xDiff) > 50) {
-                changeMonth(xDiff > 0 ? -1 : 1);
-            }
-        }, {passive: true});
-
-        // === ИДЕАЛЬНАЯ ЛОГИКА ДАТ И ЦЕН ===
-        const checkInInput = document.getElementById('checkIn');
-        const checkOutInput = document.getElementById('checkOut');
-        const priceInput = document.getElementById('price');
-
-        // Безопасное прибавление дней к строке YYYY-MM-DD (UTC)
-        function addDaysToDateStr(dateStr, days) {
-            const d = new Date(dateStr);
-            d.setUTCDate(d.getUTCDate() + days); 
-            return d.toISOString().split('T')[0];
-        }
-
-        function updateDatesFromTariffs() {
-            const startInput = checkInInput.value;
-            const endInput = checkOutInput.value;
-            
-            if (startInput && endInput && startInput < endInput) {
-                let current = new Date(startInput);
-                const end = new Date(endInput);
-                let total = 0;
-                let nights = 0;
-                
-                while (current < end) {
-                    total += state.prices[current.getUTCMonth()]; 
-                    current.setUTCDate(current.getUTCDate() + 1);
-                    nights++;
-                }
-                
-                priceInput.value = +(total / nights).toFixed(2);
-                calculateTotal();
-            }
-        }
-
-        function calculateTotal() {
-            const start = checkInInput.value ? new Date(checkInInput.value) : null;
-            const end = checkOutInput.value ? new Date(checkOutInput.value) : null;
-            const price = Number(priceInput.value);
-            const el = document.getElementById('liveTotal');
-            
-            if (start && end && start < end) {
-                const nights = Math.round((end - start) / 86400000);
-                el.innerText = `${Math.round(nights * price)} €`;
-                el.classList.add('text-emerald-500');
-            } else {
-                el.innerText = `0 €`;
-                el.classList.remove('text-emerald-500');
-            }
-        }
-
-        function handleDateLogic(changedField) {
-            const inVal = checkInInput.value;
-            const outVal = checkOutInput.value;
-
-            if (changedField === 'in' && inVal) {
-                const minOutStr = addDaysToDateStr(inVal, 1);
-                checkOutInput.min = minOutStr;
-
-                if (!outVal || outVal <= inVal) {
-                    checkOutInput.value = minOutStr;
-                }
-                
-                const d = new Date(inVal);
-                state.currentDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), 1);
-                render();
-            }
-
-            if (outVal) {
-                const maxInStr = addDaysToDateStr(outVal, -1);
-                checkInInput.max = maxInStr;
-                
-                if (changedField === 'out') {
-                    if (!inVal) {
-                        const d = new Date(outVal);
-                        state.currentDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), 1);
-                        render();
-                    }
-                }
-            }
-            updateDatesFromTariffs();
-        }
-
-        checkInInput.addEventListener('change', () => handleDateLogic('in'));
-        checkOutInput.addEventListener('change', () => handleDateLogic('out'));
-        priceInput.addEventListener('input', calculateTotal);
-
-        // === ОТРИСОВКА И СТАТИСТИКА ===
-        function render() {
-            const year = state.currentDate.getFullYear();
-            const month = state.currentDate.getMonth();
-            
-            document.getElementById('displayMonth').innerText = monthNames[month];
-            document.getElementById('displayYear').innerText = year;
-
-            const grid = document.getElementById('calendarGrid');
-            grid.innerHTML = '';
-
-            const firstDay = new Date(year, month, 1).getDay();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const offset = firstDay === 0 ? 6 : firstDay - 1;
-
-            for(let i=0; i<offset; i++) grid.appendChild(createDiv('day-cell bg-slate-50/20'));
-
-            const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-
-            for(let d=1; d<=daysInMonth; d++) {
-                const dateObj = new Date(year, month, d);
-                const dateStr = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                
-                const cell = createDiv(`day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
-                cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
-
-                state.bookings.forEach(b => {
-                    if (dateStr >= b.checkIn && dateStr <= b.checkOut) {
-                        const nights = Math.round(Math.abs(new Date(b.checkOut) - new Date(b.checkIn))/86400000);
-                        const total = Math.round(nights * b.price);
-                        
-                        const bar = createDiv('booking-bar');
-                        bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
-
-                        if (b.checkIn === dateStr) {
-                            bar.classList.add('booking-start');
-                            bar.innerHTML = `<span class="truncate pr-1">${b.guest} (${total}€)</span>`;
-                        } else if (b.checkOut === dateStr) {
-                            bar.classList.add('booking-end');
-                            bar.innerHTML = '←';
-                        } else if (dateStr > b.checkIn && dateStr < b.checkOut) {
-                            bar.classList.add('booking-mid');
-                            bar.innerHTML = '&nbsp;';
-                        }
-                        if(bar.classList.length > 1) cell.appendChild(bar);
-                    }
-                });
-                grid.appendChild(cell);
-            }
-            updateStats();
-            renderPricesList('desktopPricesList');
-        }
-
-        function createDiv(cls) { const d = document.createElement('div'); d.className = cls; return d; }
-
-        function updateStats() {
-            const m = state.currentDate.getMonth();
-            const y = state.currentDate.getFullYear();
-            let income = 0; let occupied = 0;
-
-            state.bookings.forEach(b => {
-                let d = new Date(b.checkIn);
-                const end = new Date(b.checkOut);
-                while(d < end) {
-                    if(d.getUTCMonth() === m && d.getUTCFullYear() === y) { 
-                        occupied++; 
-                        income += b.price; 
-                    }
-                    d.setUTCDate(d.getUTCDate() + 1);
-                }
-            });
-
-            const daysInM = new Date(y, m+1, 0).getDate();
-            document.getElementById('statIncome').innerText = `${Math.round(income)} €`;
-            document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
-            document.getElementById('statDays').innerText = `${occupied} ночей`;
-        }
-
-        function renderPricesList(id) {
-            const c = document.getElementById(id);
-            if(!c) return;
-            c.innerHTML = '';
-            monthNames.forEach((name, i) => {
-                const isActive = i === state.currentDate.getMonth();
-                c.innerHTML += `
-                    <div class="flex justify-between items-center p-2 rounded-lg ${isActive ? 'bg-blue-50 border border-blue-200' : ''}">
-                        <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
-                        <div class="flex items-center gap-1">
-                            <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
-                            <span class="text-[10px] text-slate-400">€</span>
-                        </div>
-                    </div>`;
-            });
-        }
-
-        function savePrices() {
-            document.querySelectorAll('.price-input').forEach(inp => state.prices[inp.dataset.idx] = Number(inp.value));
-            save(); render();
-            if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) toggleMobileView('calendar');
-        }
-        document.getElementById('savePricesBtnDesktop').onclick = savePrices;
-        document.getElementById('savePricesBtnMobile').onclick = savePrices;
-
-        // === ОТПРАВКА И УДАЛЕНИЕ ===
-        document.getElementById('bookingForm').onsubmit = (e) => {
-            e.preventDefault();
-            const inD = document.getElementById('checkIn').value;
-            const outD = document.getElementById('checkOut').value;
-            
-            if (!inD || !outD || inD >= outD) { alert("Ошибка дат"); return; }
-            if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Эти даты уже заняты!"); return; }
-
-            state.bookings.push({
-                id: Date.now().toString(),
-                guest: document.getElementById('guestName').value || 'Гость',
-                checkIn: inD, checkOut: outD,
-                price: Number(document.getElementById('price').value)
-            });
-
-            save(); render(); 
-            e.target.reset();
-            
-            document.getElementById('checkIn').max = '';
-            document.getElementById('checkOut').min = '';
-            document.getElementById('liveTotal').innerText = "0 €";
-            
-            if(window.innerWidth < 1024) toggleMobileView('calendar');
-        };
-
-        window.openDeleteModal = (id) => {
-            state.bookingToDelete = id;
-            const b = state.bookings.find(x => x.id === id);
-            if(b) {
-                const n = Math.round(Math.abs(new Date(b.checkOut) - new Date(b.checkIn))/86400000);
-                document.getElementById('deleteModalInfo').innerHTML = `
-                    <div class="font-black text-lg">${b.guest}</div>
-                    <div class="text-slate-500">${n} ночей · ${Math.round(n * b.price)} €</div>`;
-                document.getElementById('deleteModal').classList.remove('hidden');
-            }
-        };
-        
-        window.closeDeleteModal = () => document.getElementById('deleteModal').classList.add('hidden');
-        
-        document.getElementById('confirmDeleteBtn').onclick = () => {
-            state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
-            save(); render(); closeDeleteModal();
-        };
-
-        // Запуск!
-        render();
-    </script>
-</body>
-</html>
+            state
