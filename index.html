@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Scalea Smart Calculator</title>
+    <title>Умный калькулятор Скалея</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* === БАЗА И ФОН === */
@@ -101,7 +101,7 @@
         
         <header class="glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
             <div class="flex items-center gap-2">
-                <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Scalea<span class="text-blue-600">.Calc</span></h1>
+                <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Скалея<span class="text-blue-600">.Кальк</span></h1>
             </div>
             
             <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
@@ -310,7 +310,7 @@
             }));
             const a = document.createElement('a');
             a.href = dataStr;
-            a.download = `scalea_backup_${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `резервная_копия_${new Date().toISOString().slice(0,10)}.json`;
             document.body.appendChild(a); a.click(); a.remove();
         }
 
@@ -400,7 +400,7 @@
 
         function goToToday() { state.currentDate = new Date(); render(); }
 
-        // === ИДЕАЛЬНАЯ ЛОГИКА ДАТ И ЦЕН (Без багов с часовыми поясами) ===
+        // === ИДЕАЛЬНАЯ ЛОГИКА ДАТ И ЦЕН ===
         const checkInInput = document.getElementById('checkIn');
         const checkOutInput = document.getElementById('checkOut');
         const priceInput = document.getElementById('price');
