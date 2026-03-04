@@ -284,6 +284,16 @@
     </div>
 
     <script>
+        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
+        
+        function getDifferenceInNights(startStr, endStr) {
+            const [y1, m1, d1] = startStr.split('-').map(Number);
+            const [y2, m2, d2] = endStr.split('-').map(Number);
+            const date1 = Date.UTC(y1, m1 - 1, d1);
+            const date2 = Date.UTC(y2, m2 - 1, d2);
+            return Math.round((date2 - date1) / 86400000);
+        }
+
         function parseDateLocal(dateStr) {
             if (!dateStr) return null;
             const [y, m, d] = dateStr.split('-');
@@ -291,12 +301,14 @@
         }
 
         function addDaysToDateStr(dateStr, days) {
-            const d = parseDateLocal(dateStr);
-            d.setDate(d.getDate() + days);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d, 12, 0, 0);
+            dateObj.setDate(dateObj.getDate() + days);
+            
+            const newY = dateObj.getFullYear();
+            const newM = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const newD = String(dateObj.getDate()).padStart(2, '0');
+            return `${newY}-${newM}-${newD}`;
         }
 
         function getTodayLocalStr() {
@@ -307,6 +319,7 @@
             return `${y}-${m}-${day}`;
         }
 
+        // === БАЗОВАЯ ЛОГИКА И ХРАНЕНИЕ ===
         const STORAGE_KEY = 'scalea_data_v5';
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
@@ -353,7 +366,14 @@
                     const data = JSON.parse(e.target.result);
                     if (data && typeof data === 'object' && Array.isArray(data.bookings)) {
                         state.bookings = data.bookings.filter(b => b.id && b.checkIn && b.checkOut && b.price !== undefined);
-                        state.prices = data.prices || [...defaultPrices];
+                        
+                        // ИСПРАВЛЕНИЕ 2: Жесткая проверка массива цен (защита от поломки приложения)
+                        if (Array.isArray(data.prices) && data.prices.length === 12) {
+                            state.prices = data.prices;
+                        } else {
+                            state.prices = [...defaultPrices];
+                        }
+                        
                         save(); render();
                         alert("Успешно загружено!");
                         toggleMobileView('calendar');
@@ -421,31 +441,12 @@
         function changeMonth(delta) {
             state.currentDate.setDate(1); 
             state.currentDate.setMonth(state.currentDate.getMonth() + delta);
-            
-            // === АВТО-СИНХРОНИЗАЦИЯ ФОРМЫ С ВЫБРАННЫМ МЕСЯЦЕМ ===
-            const y = state.currentDate.getFullYear();
-            const m = String(state.currentDate.getMonth() + 1).padStart(2, '0');
-            
-            const inInput = document.getElementById('checkIn');
-            const outInput = document.getElementById('checkOut');
-            
-            // Ставим 1-е и 2-е число выбранного месяца
-            inInput.value = `${y}-${m}-01`;
-            outInput.value = `${y}-${m}-02`;
-            
-            outInput.min = `${y}-${m}-02`;
-            inInput.max = '';
-            
-            updateDatesFromTariffs();
-            // ====================================================
-
             render();
         }
 
         function goToToday() { 
             state.currentDate = new Date(); 
             
-            // Сбрасываем форму, если нажали "Сегодня"
             const inInput = document.getElementById('checkIn');
             const outInput = document.getElementById('checkOut');
             inInput.value = '';
@@ -454,6 +455,9 @@
             outInput.min = '';
             document.getElementById('price').value = '0';
             document.getElementById('liveTotal').innerText = '0 €';
+            
+            // ИСПРАВЛЕНИЕ 3: Очистка имени гостя
+            document.getElementById('guestName').value = '';
 
             render(); 
         }
@@ -496,15 +500,15 @@
             const endInput = checkOutInput.value;
             
             if (startInput && endInput && startInput < endInput) {
-                let current = parseDateLocal(startInput);
-                const end = parseDateLocal(endInput);
+                const nights = getDifferenceInNights(startInput, endInput);
                 let total = 0;
-                let nights = 0;
                 
-                while (current < end) {
+                const [y, m, d] = startInput.split('-').map(Number);
+                let current = new Date(y, m - 1, d, 12, 0, 0); 
+                
+                for(let i = 0; i < nights; i++) {
                     total += state.prices[current.getMonth()]; 
                     current.setDate(current.getDate() + 1);
-                    nights++;
                 }
                 
                 if (nights > 0) {
@@ -524,9 +528,7 @@
             const el = document.getElementById('liveTotal');
             
             if (startStr && endStr && startStr < endStr) {
-                const startD = parseDateLocal(startStr);
-                const endD = parseDateLocal(endStr);
-                const nights = Math.round((endD - startD) / 86400000);
+                const nights = getDifferenceInNights(startStr, endStr);
                 el.innerText = `${Math.round(nights * price)} €`;
                 el.classList.add('text-emerald-500');
             } else {
@@ -547,8 +549,8 @@
                     checkOutInput.value = minOutStr;
                 }
                 
-                const d = parseDateLocal(inVal);
-                state.currentDate = new Date(d.getFullYear(), d.getMonth(), 1);
+                const [y, m, d] = inVal.split('-').map(Number);
+                state.currentDate = new Date(y, m - 1, 1);
                 render();
             }
 
@@ -558,8 +560,8 @@
                 
                 if (changedField === 'out') {
                     if (!inVal) {
-                        const d = parseDateLocal(outVal);
-                        state.currentDate = new Date(d.getFullYear(), d.getMonth(), 1);
+                        const [y, m, d] = outVal.split('-').map(Number);
+                        state.currentDate = new Date(y, m - 1, 1);
                         render();
                     }
                 }
@@ -603,9 +605,7 @@
 
                 state.bookings.forEach(b => {
                     if (dateStr >= b.checkIn && dateStr < b.checkOut) {
-                        const startD = parseDateLocal(b.checkIn);
-                        const endD = parseDateLocal(b.checkOut);
-                        const nights = Math.round((endD - startD) / 86400000);
+                        const nights = getDifferenceInNights(b.checkIn, b.checkOut);
                         const total = Math.round(nights * b.price);
                         
                         const bar = createDiv('booking-bar');
@@ -613,13 +613,16 @@
 
                         const lastNight = addDaysToDateStr(b.checkOut, -1);
 
+                        // ИСПРАВЛЕНИЕ 1: Защита от XSS (взлом через имя)
+                        const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
                         if (b.checkIn === dateStr && lastNight === dateStr) {
                             bar.classList.add('booking-start');
                             bar.style.borderRadius = '6px';
-                            bar.innerHTML = `<span class="truncate px-1">${b.guest} (${total}€)</span>`;
+                            bar.innerHTML = `<span class="truncate px-1">${safeGuest} (${total}€)</span>`;
                         } else if (b.checkIn === dateStr) {
                             bar.classList.add('booking-start');
-                            bar.innerHTML = `<span class="truncate pr-1">${b.guest} (${total}€)</span>`;
+                            bar.innerHTML = `<span class="truncate pr-1">${safeGuest} (${total}€)</span>`;
                         } else if (lastNight === dateStr) {
                             bar.classList.add('booking-end');
                             bar.innerHTML = '←';
@@ -640,29 +643,30 @@
         function createDiv(cls) { const d = document.createElement('div'); d.className = cls; return d; }
 
         function updateStats() {
-            const m = state.currentDate.getMonth();
-            const y = state.currentDate.getFullYear();
+            const currentMonth = state.currentDate.getMonth();
+            const currentYear = state.currentDate.getFullYear();
             let income = 0; 
             let occupied = 0;
             let yearIncome = 0; 
 
             state.bookings.forEach(b => {
-                let d = parseDateLocal(b.checkIn);
-                const end = parseDateLocal(b.checkOut);
+                const nights = getDifferenceInNights(b.checkIn, b.checkOut);
+                const [by, bm, bd] = b.checkIn.split('-').map(Number);
+                let current = new Date(by, bm - 1, bd, 12, 0, 0);
                 
-                while(d < end) {
-                    if(d.getFullYear() === y) { 
+                for(let i = 0; i < nights; i++) {
+                    if (current.getFullYear() === currentYear) { 
                         yearIncome += b.price; 
-                        if (d.getMonth() === m) {
+                        if (current.getMonth() === currentMonth) {
                             occupied++; 
                             income += b.price; 
                         }
                     }
-                    d.setDate(d.getDate() + 1);
+                    current.setDate(current.getDate() + 1);
                 }
             });
 
-            const daysInM = new Date(y, m+1, 0).getDate();
+            const daysInM = new Date(currentYear, currentMonth + 1, 0).getDate();
             document.getElementById('statIncome').innerText = `${Math.round(income)} €`;
             document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
             document.getElementById('statDays').innerText = `${occupied} ночей`;
@@ -725,13 +729,14 @@
             state.bookingToDelete = id;
             const b = state.bookings.find(x => x.id === id);
             if(b) {
-                const startD = parseDateLocal(b.checkIn);
-                const endD = parseDateLocal(b.checkOut);
-                const n = Math.round((endD - startD) / 86400000);
+                const nights = getDifferenceInNights(b.checkIn, b.checkOut);
                 
+                // ИСПРАВЛЕНИЕ 1 (Продолжение): Защита от XSS в модальном окне удаления
+                const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
                 document.getElementById('deleteModalInfo').innerHTML = `
-                    <div class="font-black text-lg">${b.guest}</div>
-                    <div class="text-slate-500">${n} ночей · ${Math.round(n * b.price)} €</div>`;
+                    <div class="font-black text-lg">${safeGuest}</div>
+                    <div class="text-slate-500">${nights} ночей · ${Math.round(nights * b.price)} €</div>`;
                 document.getElementById('deleteModal').classList.remove('hidden');
             }
         };
