@@ -1,706 +1,253 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Умный калькулятор Скалея</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* === БАЗА И ФОН === */
-        body {
-            background-image: url('web_ready_bg.jpg');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            padding-bottom: 120px; 
-        }
-        
-        body::before {
-            content: ''; position: fixed; inset: 0;
-            background: rgba(15, 23, 42, 0.3); z-index: -1;
-        }
-
-        /* === ЭФФЕКТ СТЕКЛА === */
-        .glass {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.7);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        }
-        .glass-dark {
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(16px);
-            color: white;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-        }
-
-        /* === КАЛЕНДАРЬ === */
-        .day-cell { 
-            min-height: 100px; 
-            border-right: 1px solid rgba(0,0,0,0.05); 
-            border-bottom: 1px solid rgba(0,0,0,0.05); 
-            transition: 0.2s; 
-            user-select: none;
-        }
-        .day-today { background: rgba(254, 243, 199, 0.7); }
-        .day-num { 
-            width: 24px; height: 24px; 
-            display: flex; align-items: center; justify-content: center; 
-            border-radius: 50%; font-size: 11px; font-weight: 700; 
-        }
-        .day-today .day-num { 
-            background: #f59e0b; color: white; 
-            box-shadow: 0 2px 5px rgba(245, 158, 11, 0.4); 
-        }
-
-        /* === ПОЛОСКИ БРОНИ === */
-        .booking-bar {
-            height: 22px; font-size: 11px; display: flex; align-items: center; margin-bottom: 2px;
-            cursor: pointer; font-weight: 600; position: relative; z-index: 10;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: transform 0.1s;
-        }
-        .booking-bar:active { transform: scale(0.97); }
-        
-        .booking-start { 
-            background: linear-gradient(135deg, #2563eb, #3b82f6); 
-            color: white; border-radius: 6px 0 0 6px; 
-            padding-left: 6px; margin-right: -1px; 
-        }
-        .booking-mid { background: #bfdbfe; color: transparent; opacity: 0.9; }
-        .booking-end { 
-            background: linear-gradient(135deg, #bfdbfe, #2563eb); 
-            border-radius: 0 6px 6px 0; margin-left: -1px; 
-        }
-
-        /* === АДАПТИВНОСТЬ === */
-        .mobile-nav { display: none; }
-        
-        @media (max-width: 1024px) {
-            .mobile-nav { 
-                display: grid; 
-                padding-bottom: calc(4px + env(safe-area-inset-bottom, 16px));
-                z-index: 999;
-            }
-            .day-cell { min-height: 80px; }
-            body { padding: 12px 12px calc(120px + env(safe-area-inset-bottom, 16px)) 12px; }
-            .desktop-only { display: none !important; }
-        }
-
-        @keyframes slideUp { 
-            from { transform: translateY(100%); opacity: 0; } 
-            to { transform: translateY(0); opacity: 1; } 
-        }
-        .modal-animate { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Календарь аренды</title>
+<style>
+body{
+    font-family: Arial;
+    background:#f3f4f6;
+    margin:0;
+    padding:20px;
+}
+.container{
+    max-width:900px;
+    margin:auto;
+}
+.header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+button{
+    padding:6px 10px;
+    margin:2px;
+    cursor:pointer;
+}
+.calendar{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:5px;
+    margin-top:20px;
+}
+.day{
+    background:white;
+    padding:10px;
+    min-height:70px;
+    border-radius:6px;
+    cursor:pointer;
+}
+.booked{
+    background:#fecaca;
+}
+.stats{
+    margin-top:20px;
+    padding:10px;
+    background:white;
+    border-radius:6px;
+}
+.modal{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.5);
+    display:none;
+    justify-content:center;
+    align-items:center;
+}
+.modal-content{
+    background:white;
+    padding:20px;
+    border-radius:8px;
+    width:300px;
+}
+input{
+    width:100%;
+    padding:6px;
+    margin-bottom:8px;
+}
+</style>
 </head>
-<body class="text-slate-800">
+<body>
 
-    <div class="max-w-7xl mx-auto h-full">
-        
-        <header class="glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
-            <div class="flex items-center gap-2">
-                <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Скалея<span class="text-blue-600">.Кальк</span></h1>
-            </div>
-            
-            <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
-                <button id="prevMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
-                </button>
-                <div class="px-2 text-center min-w-[110px] select-none">
-                    <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">...</div>
-                    <div id="displayYear" class="text-[10px] font-bold text-slate-400">...</div>
-                </div>
-                <button id="nextMonth" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                </button>
-            </div>
-
-            <button onclick="goToToday()" class="hidden lg:block px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-slate-700 transition">
-                Сегодня
-            </button>
-        </header>
-
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
-            
-            <div id="sidebarPanel" class="hidden lg:block lg:col-span-3 space-y-4">
-                
-                <div class="glass p-5 rounded-3xl relative">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xs font-black uppercase tracking-widest text-blue-600">Новая бронь</h3>
-                        <button onclick="toggleMobileView('calendar')" class="lg:hidden p-2 text-slate-400 bg-slate-100 rounded-full hover:bg-slate-200">✕</button>
-                    </div>
-
-                    <form id="bookingForm" class="space-y-3 relative z-20">
-                        <input type="text" id="guestName" placeholder="Имя гостя" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold placeholder:font-normal">
-                        
-                        <div class="grid grid-cols-2 gap-2">
-                            <label for="checkIn" class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200 relative block cursor-pointer active:bg-slate-100 transition">
-                                <span class="text-[9px] font-bold text-slate-400 uppercase block mb-1 pointer-events-none">Заезд</span>
-                                <input type="date" id="checkIn" class="w-full h-8 bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer block" onclick="this.showPicker && this.showPicker();">
-                            </label>
-                            
-                            <label for="checkOut" class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200 relative block cursor-pointer active:bg-slate-100 transition">
-                                <span class="text-[9px] font-bold text-slate-400 uppercase block mb-1 pointer-events-none">Выезд</span>
-                                <input type="date" id="checkOut" class="w-full h-8 bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer block" onclick="this.showPicker && this.showPicker();">
-                            </label>
-                        </div>
-
-                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center justify-between relative">
-                            <div>
-                                <label class="text-[9px] font-bold text-blue-400 uppercase block">Цена/ночь</label>
-                                <input type="number" id="price" step="0.01" class="w-16 bg-transparent text-sm font-black text-blue-700 outline-none border-b border-blue-200" value="0">
-                            </div>
-                            <div class="text-right">
-                                <span class="text-[9px] font-bold text-blue-400 uppercase block">Итого</span>
-                                <span id="liveTotal" class="text-lg font-black text-blue-600">0 €</span>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2 text-sm cursor-pointer">
-                            <span>Добавить</span>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
-                        </button>
-                    </form>
-                </div>
-
-                <div id="statsBlock" class="glass-dark p-5 rounded-3xl text-white">
-                    <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Доход (Месяц)</h3>
-                    <div class="flex justify-between items-baseline">
-                        <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
-                        <div class="text-right">
-                            <div id="statOccupancy" class="text-lg font-bold text-emerald-400">0%</div>
-                            <div id="statDays" class="text-[10px] opacity-60">0 ночей</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="glass p-4 rounded-3xl hidden lg:block">
-                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">База данных</h3>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="downloadBackup()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-xl transition gap-1 border border-transparent hover:border-emerald-200">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                            <span class="text-[9px] font-bold uppercase">Скачать</span>
-                        </button>
-                        <button onclick="document.getElementById('fileInputDesktop').click()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl transition gap-1 border border-transparent hover:border-blue-200">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                            <span class="text-[9px] font-bold uppercase">Загрузить</span>
-                        </button>
-                    </div>
-                    <input type="file" id="fileInputDesktop" class="hidden" accept=".json" onchange="uploadBackup(this)">
-                </div>
-
-                 <div class="glass p-4 rounded-3xl hidden lg:block">
-                    <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Базовые тарифы</h3>
-                    <div id="desktopPricesList" class="h-40 overflow-y-auto custom-scrollbar space-y-1 pr-1"></div>
-                    <button id="savePricesBtnDesktop" class="w-full mt-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition">Сохранить тарифы</button>
-                </div>
-            </div>
-
-            <div id="calendarView" class="lg:col-span-9 h-full">
-                <div class="glass rounded-3xl overflow-hidden shadow-sm min-h-[500px]">
-                    <div class="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200">
-                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ПН</div>
-                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ВТ</div>
-                        <div class="py-3 text-center text-[10px] font-black text-slate-400">СР</div>
-                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ЧТ</div>
-                        <div class="py-3 text-center text-[10px] font-black text-slate-400">ПТ</div>
-                        <div class="py-3 text-center text-[10px] font-black text-rose-400">СБ</div>
-                        <div class="py-3 text-center text-[10px] font-black text-rose-400">ВС</div>
-                    </div>
-                    <div id="calendarGrid" class="grid grid-cols-7 bg-white/40"></div>
-                </div>
-            </div>
-        </div>
+<div class="container">
+    <div class="header">
+        <button onclick="prevMonth()">◀</button>
+        <h2 id="monthTitle"></h2>
+        <button onclick="nextMonth()">▶</button>
     </div>
 
-    <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl p-1 border border-white/10 grid grid-cols-4 gap-1">
-        <button onclick="toggleMobileView('calendar')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-blue-400 gap-1.5" id="navCal">
-            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Календарь</span>
-        </button>
-        <button onclick="toggleMobileView('add')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navAdd">
-            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Бронь</span>
-        </button>
-        <button onclick="toggleMobileView('prices')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navPrices">
-            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Тарифы</span>
-        </button>
-        <button onclick="toggleMobileView('data')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navData">
-            <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
-            <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">База</span>
-        </button>
+    <div class="calendar" id="calendar"></div>
+
+    <div class="stats">
+        <div id="monthIncome"></div>
+        <div id="yearIncome"></div>
     </div>
 
-    <div id="mobileDataModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
-        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg text-slate-800">Данные</h2>
-            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
-        </div>
-        <div class="p-6 flex flex-col gap-4 justify-center items-center flex-grow text-center">
-            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full active:scale-95 transition">
-                <h3 class="font-bold text-blue-800 mb-2">Скачать базу</h3>
-                <p class="text-xs text-blue-600 mb-4">Сохранить резервную копию</p>
-                <button onclick="downloadBackup()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg">Скачать .json</button>
-            </div>
+    <button onclick="exportData()">Экспорт</button>
+    <input type="file" onchange="importData(event)">
+</div>
 
-            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 w-full active:scale-95 transition">
-                <h3 class="font-bold text-slate-800 mb-2">Загрузить базу</h3>
-                <p class="text-xs text-slate-500 mb-4">Восстановить из файла</p>
-                <button onclick="document.getElementById('fileInputMobile').click()" class="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold">Выбрать файл</button>
-                <input type="file" id="fileInputMobile" class="hidden" accept=".json" onchange="uploadBackup(this)">
-            </div>
-        </div>
+<div class="modal" id="modal">
+    <div class="modal-content">
+        <h3>Бронирование</h3>
+        <input type="date" id="checkIn">
+        <input type="date" id="checkOut">
+        <input type="number" id="price" placeholder="Цена за ночь">
+        <button onclick="saveBooking()">Сохранить</button>
+        <button onclick="closeModal()">Отмена</button>
     </div>
+</div>
 
-    <div id="mobilePricesModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
-        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg text-slate-800">Тарифы</h2>
-            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
-        </div>
-        <div class="p-4 overflow-y-auto flex-grow" id="mobilePricesList"></div>
-        <div class="p-4 border-t bg-white safe-area-bottom">
-            <button id="savePricesBtnMobile" class="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-200">Сохранить</button>
-        </div>
-    </div>
+<script>
 
-    <div id="deleteModal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 modal-animate">
-        <div class="glass p-6 rounded-3xl w-full max-w-xs shadow-2xl">
-            <h3 class="text-lg font-bold text-center text-slate-800 mb-2">Удаление</h3>
-            <div id="deleteModalInfo" class="bg-slate-50/50 p-4 rounded-xl text-center mb-6 border border-slate-100 text-sm"></div>
-            <div class="flex gap-3">
-                <button onclick="closeDeleteModal()" class="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition text-sm">Отмена</button>
-                <button id="confirmDeleteBtn" class="flex-1 py-3 font-bold bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition shadow-lg shadow-rose-200 text-sm">Удалить</button>
-            </div>
-        </div>
-    </div>
+let state = {
+    bookings: JSON.parse(localStorage.getItem("bookings")) || [],
+    currentDate: new Date()
+};
 
-    <script>
-        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
-        function parseDateLocal(dateStr) {
-            if (!dateStr) return null;
-            const [y, m, d] = dateStr.split('-');
-            return new Date(y, m - 1, d);
+function save(){
+    localStorage.setItem("bookings", JSON.stringify(state.bookings));
+}
+
+function toDate(str){
+    return new Date(str);
+}
+
+function formatDate(d){
+    return d.toISOString().split("T")[0];
+}
+
+function isBooked(date){
+    return state.bookings.some(b=>{
+        return date >= toDate(b.checkIn) && date < toDate(b.checkOut);
+    });
+}
+
+function render(){
+    const calendar = document.getElementById("calendar");
+    calendar.innerHTML = "";
+
+    const year = state.currentDate.getFullYear();
+    const month = state.currentDate.getMonth();
+
+    const firstDay = new Date(year,month,1);
+    const lastDay = new Date(year,month+1,0);
+
+    document.getElementById("monthTitle").innerText =
+        firstDay.toLocaleString("ru",{month:"long"}) + " " + year;
+
+    for(let i=1;i<=lastDay.getDate();i++){
+        const date = new Date(year,month,i);
+        const div = document.createElement("div");
+        div.className="day";
+        div.innerText=i;
+
+        if(isBooked(date)){
+            div.classList.add("booked");
         }
 
-        function addDaysToDateStr(dateStr, days) {
-            const d = parseDateLocal(dateStr);
-            d.setDate(d.getDate() + days);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-        }
-
-        function getTodayLocalStr() {
-            const d = new Date();
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-        }
-
-        // === БАЗОВАЯ ЛОГИКА И ХРАНЕНИЕ ===
-        const STORAGE_KEY = 'scalea_data_v5';
-        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-        const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
-
-        let state = {
-            bookings: [],
-            prices: [...defaultPrices],
-            currentDate: new Date(),
-            bookingToDelete: null
+        div.onclick=()=>{
+            openModal(formatDate(date));
         };
 
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                state.bookings = parsed.bookings || [];
-                state.prices = parsed.prices || [...defaultPrices];
-            }
-        } catch (e) { console.error("Ошибка загрузки", e); }
+        calendar.appendChild(div);
+    }
 
-        function save() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookings: state.bookings, prices: state.prices }));
-        }
+    updateStats();
+}
 
-        function downloadBackup() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ 
-                bookings: state.bookings, 
-                prices: state.prices 
-            }));
-            const a = document.createElement('a');
-            a.href = dataStr;
-            a.download = `резервная_копия_${getTodayLocalStr()}.json`;
-            document.body.appendChild(a); a.click(); a.remove();
-        }
+function updateStats(){
+    const year = state.currentDate.getFullYear();
+    const month = state.currentDate.getMonth();
 
-        function uploadBackup(input) {
-            const file = input.files[0];
-            if (!file) return;
-            if(!confirm("Заменить текущие данные данными из файла?")) { input.value = ''; return; }
+    let monthIncome = 0;
+    let yearIncome = 0;
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    // ЖЕСТКАЯ ПРОВЕРКА СТРУКТУРЫ JSON
-                    if (data && typeof data === 'object' && Array.isArray(data.bookings)) {
-                        state.bookings = data.bookings.filter(b => b.id && b.checkIn && b.checkOut && b.price !== undefined);
-                        state.prices = data.prices || [...defaultPrices];
-                        save(); render();
-                        alert("Успешно загружено!");
-                        toggleMobileView('calendar');
-                    } else { alert("Неверный формат файла базы данных!"); }
-                } catch { alert("Ошибка чтения файла!"); }
-            };
-            reader.readAsText(file);
-            input.value = '';
-        }
+    state.bookings.forEach(b=>{
+        let d = toDate(b.checkIn);
+        const end = toDate(b.checkOut);
 
-        function toggleMobileView(view) {
-            const els = {
-                sidebar: document.getElementById('sidebarPanel'),
-                stats: document.getElementById('statsBlock'),
-                calendar: document.getElementById('calendarView'),
-                modals: {
-                    prices: document.getElementById('mobilePricesModal'),
-                    data: document.getElementById('mobileDataModal')
-                },
-                navs: ['navCal', 'navAdd', 'navPrices', 'navData']
-            };
-
-            els.navs.forEach(id => {
-                const el = document.getElementById(id);
-                el.classList.remove('text-blue-400');
-                el.classList.add('text-slate-400');
-            });
-
-            els.sidebar.classList.add('hidden'); els.sidebar.classList.remove('lg:block');
-            els.calendar.classList.add('hidden');
-            els.modals.prices.classList.add('hidden'); els.modals.prices.classList.remove('flex');
-            els.modals.data.classList.add('hidden'); els.modals.data.classList.remove('flex');
-            
-            if (view === 'calendar') {
-                els.calendar.classList.remove('hidden');
-                document.getElementById('navCal').classList.add('text-blue-400');
-                els.sidebar.classList.add('lg:block'); 
-                els.stats.classList.remove('hidden'); 
-            } 
-            else if (view === 'add') {
-                els.sidebar.classList.remove('hidden');
-                if(window.innerWidth < 1024) els.stats.classList.add('hidden'); 
-                document.getElementById('navAdd').classList.add('text-blue-400');
-            } 
-            else if (view === 'prices') {
-                renderPricesList('mobilePricesList');
-                els.modals.prices.classList.remove('hidden'); els.modals.prices.classList.add('flex');
-                document.getElementById('navPrices').classList.add('text-blue-400');
-            } 
-            else if (view === 'data') {
-                els.modals.data.classList.remove('hidden'); els.modals.data.classList.add('flex');
-                document.getElementById('navData').classList.add('text-blue-400');
-            }
-        }
-
-        document.getElementById('prevMonth').onclick = () => changeMonth(-1);
-        document.getElementById('nextMonth').onclick = () => changeMonth(1);
-        document.addEventListener('keydown', (e) => {
-            if(e.target.tagName !== 'INPUT') {
-                if(e.key === 'ArrowLeft') changeMonth(-1);
-                if(e.key === 'ArrowRight') changeMonth(1);
-            }
-        });
-
-        function changeMonth(delta) {
-            state.currentDate.setDate(1); 
-            state.currentDate.setMonth(state.currentDate.getMonth() + delta);
-            render();
-        }
-
-        function goToToday() { state.currentDate = new Date(); render(); }
-
-        const calendarZone = document.getElementById('calendarView');
-        let touchStartX = 0;
-        let touchStartY = 0;
-
-        calendarZone.addEventListener('touchstart', function(e) {
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-        }, { passive: true });
-
-        calendarZone.addEventListener('touchend', function(e) {
-            if (!touchStartX || !touchStartY) return;
-
-            let touchEndX = e.changedTouches[0].clientX;
-            let touchEndY = e.changedTouches[0].clientY;
-
-            let xDiff = touchStartX - touchEndX;
-            let yDiff = touchStartY - touchEndY;
-
-            if (Math.abs(xDiff) > Math.abs(yDiff) * 1.5) {
-                if (xDiff > 40) {
-                    changeMonth(1);
-                } else if (xDiff < -40) {
-                    changeMonth(-1); 
+        while(d < end){
+            if(d.getFullYear() === year){
+                yearIncome += b.price;
+                if(d.getMonth() === month){
+                    monthIncome += b.price;
                 }
             }
-            touchStartX = 0;
-            touchStartY = 0;
-        }, { passive: true });
-
-        const checkInInput = document.getElementById('checkIn');
-        const checkOutInput = document.getElementById('checkOut');
-        const priceInput = document.getElementById('price');
-
-        function updateDatesFromTariffs() {
-            const startInput = checkInInput.value;
-            const endInput = checkOutInput.value;
-            
-            if (startInput && endInput && startInput < endInput) {
-                let current = parseDateLocal(startInput);
-                const end = parseDateLocal(endInput);
-                let total = 0;
-                let nights = 0;
-                
-                while (current < end) {
-                    total += state.prices[current.getMonth()]; 
-                    current.setDate(current.getDate() + 1);
-                    nights++;
-                }
-                
-                // ЗАЩИТА ОТ ДЕЛЕНИЯ НА НОЛЬ
-                if (nights > 0) {
-                    priceInput.value = +(total / nights).toFixed(2);
-                } else {
-                    priceInput.value = 0;
-                }
-                
-                calculateTotal();
-            }
+            d.setDate(d.getDate()+1);
         }
+    });
 
-        function calculateTotal() {
-            const startStr = checkInInput.value;
-            const endStr = checkOutInput.value;
-            const price = Number(priceInput.value);
-            const el = document.getElementById('liveTotal');
-            
-            if (startStr && endStr && startStr < endStr) {
-                const startD = parseDateLocal(startStr);
-                const endD = parseDateLocal(endStr);
-                const nights = Math.round((endD - startD) / 86400000);
-                el.innerText = `${Math.round(nights * price)} €`;
-                el.classList.add('text-emerald-500');
-            } else {
-                el.innerText = `0 €`;
-                el.classList.remove('text-emerald-500');
-            }
-        }
+    document.getElementById("monthIncome").innerText =
+        "Доход за месяц: € " + monthIncome;
 
-        function handleDateLogic(changedField) {
-            const inVal = checkInInput.value;
-            const outVal = checkOutInput.value;
+    document.getElementById("yearIncome").innerText =
+        "Доход за год: € " + yearIncome;
+}
 
-            if (changedField === 'in' && inVal) {
-                const minOutStr = addDaysToDateStr(inVal, 1);
-                checkOutInput.min = minOutStr;
+function openModal(date){
+    document.getElementById("modal").style.display="flex";
+    document.getElementById("checkIn").value=date;
+    document.getElementById("checkOut").value=date;
+}
 
-                if (!outVal || outVal <= inVal) {
-                    checkOutInput.value = minOutStr;
-                }
-                
-                const d = parseDateLocal(inVal);
-                state.currentDate = new Date(d.getFullYear(), d.getMonth(), 1);
-                render();
-            }
+function closeModal(){
+    document.getElementById("modal").style.display="none";
+}
 
-            if (outVal) {
-                const maxInStr = addDaysToDateStr(outVal, -1);
-                checkInInput.max = maxInStr;
-                
-                if (changedField === 'out') {
-                    if (!inVal) {
-                        const d = parseDateLocal(outVal);
-                        state.currentDate = new Date(d.getFullYear(), d.getMonth(), 1);
-                        render();
-                    }
-                }
-            }
-            updateDatesFromTariffs();
-        }
+function saveBooking(){
+    const checkIn = document.getElementById("checkIn").value;
+    const checkOut = document.getElementById("checkOut").value;
+    const price = parseFloat(document.getElementById("price").value);
 
-        checkInInput.addEventListener('change', () => handleDateLogic('in'));
-        checkOutInput.addEventListener('change', () => handleDateLogic('out'));
-        priceInput.addEventListener('input', calculateTotal);
+    if(!checkIn || !checkOut || !price){
+        alert("Заполни все поля");
+        return;
+    }
 
-        function render() {
-            const year = state.currentDate.getFullYear();
-            const month = state.currentDate.getMonth();
-            
-            document.getElementById('displayMonth').innerText = monthNames[month];
-            document.getElementById('displayYear').innerText = year;
+    state.bookings.push({checkIn,checkOut,price});
+    save();
+    closeModal();
+    render();
+}
 
-            const grid = document.getElementById('calendarGrid');
-            grid.innerHTML = '';
+function prevMonth(){
+    state.currentDate.setMonth(state.currentDate.getMonth()-1);
+    render();
+}
 
-            const firstDay = new Date(year, month, 1).getDay();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const offset = firstDay === 0 ? 6 : firstDay - 1;
+function nextMonth(){
+    state.currentDate.setMonth(state.currentDate.getMonth()+1);
+    render();
+}
 
-            for(let i=0; i<offset; i++) grid.appendChild(createDiv('day-cell bg-slate-50/20'));
+function exportData(){
+    const data = JSON.stringify(state.bookings);
+    const blob = new Blob([data],{type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url;
+    a.download="bookings.json";
+    a.click();
+}
 
-            const todayStr = getTodayLocalStr();
-
-            for(let d=1; d<=daysInMonth; d++) {
-                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                
-                const cell = createDiv(`day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
-                cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
-
-                state.bookings.forEach(b => {
-                    // Отрисовка только по оплаченным ночам
-                    if (dateStr >= b.checkIn && dateStr < b.checkOut) {
-                        const startD = parseDateLocal(b.checkIn);
-                        const endD = parseDateLocal(b.checkOut);
-                        const nights = Math.round((endD - startD) / 86400000);
-                        const total = Math.round(nights * b.price);
-                        
-                        const bar = createDiv('booking-bar');
-                        bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
-
-                        const lastNight = addDaysToDateStr(b.checkOut, -1);
-
-                        if (b.checkIn === dateStr && lastNight === dateStr) {
-                            bar.classList.add('booking-start');
-                            bar.style.borderRadius = '6px';
-                            bar.innerHTML = `<span class="truncate px-1">${b.guest} (${total}€)</span>`;
-                        } else if (b.checkIn === dateStr) {
-                            bar.classList.add('booking-start');
-                            bar.innerHTML = `<span class="truncate pr-1">${b.guest} (${total}€)</span>`;
-                        } else if (lastNight === dateStr) {
-                            bar.classList.add('booking-end');
-                            bar.innerHTML = '←';
-                        } else {
-                            bar.classList.add('booking-mid');
-                            bar.innerHTML = '&nbsp;';
-                        }
-                        
-                        cell.appendChild(bar);
-                    }
-                });
-                grid.appendChild(cell);
-            }
-            updateStats();
-            renderPricesList('desktopPricesList');
-        }
-
-        function createDiv(cls) { const d = document.createElement('div'); d.className = cls; return d; }
-
-        function updateStats() {
-            const m = state.currentDate.getMonth();
-            const y = state.currentDate.getFullYear();
-            let income = 0; let occupied = 0;
-
-            state.bookings.forEach(b => {
-                let d = parseDateLocal(b.checkIn);
-                const end = parseDateLocal(b.checkOut);
-                
-                while(d < end) {
-                    if(d.getMonth() === m && d.getFullYear() === y) { 
-                        occupied++; 
-                        income += b.price; 
-                    }
-                    d.setDate(d.getDate() + 1);
-                }
-            });
-
-            const daysInM = new Date(y, m+1, 0).getDate();
-            document.getElementById('statIncome').innerText = `${Math.round(income)} €`;
-            document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
-            document.getElementById('statDays').innerText = `${occupied} ночей`;
-        }
-
-        function renderPricesList(id) {
-            const c = document.getElementById(id);
-            if(!c) return;
-            c.innerHTML = '';
-            monthNames.forEach((name, i) => {
-                const isActive = i === state.currentDate.getMonth();
-                c.innerHTML += `
-                    <div class="flex justify-between items-center p-2 rounded-lg ${isActive ? 'bg-blue-50 border border-blue-200' : ''}">
-                        <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
-                        <div class="flex items-center gap-1">
-                            <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
-                            <span class="text-[10px] text-slate-400">€</span>
-                        </div>
-                    </div>`;
-            });
-        }
-
-        function savePrices() {
-            document.querySelectorAll('.price-input').forEach(inp => state.prices[inp.dataset.idx] = Number(inp.value));
-            save(); render();
-            if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) toggleMobileView('calendar');
-        }
-        document.getElementById('savePricesBtnDesktop').onclick = savePrices;
-        document.getElementById('savePricesBtnMobile').onclick = savePrices;
-
-        document.getElementById('bookingForm').onsubmit = (e) => {
-            e.preventDefault();
-            const inD = document.getElementById('checkIn').value;
-            const outD = document.getElementById('checkOut').value;
-            const priceVal = Number(document.getElementById('price').value);
-            
-            if (!inD || !outD || inD >= outD) { alert("Пожалуйста, проверьте даты!"); return; }
-            if (priceVal <= 0) { alert("Укажите корректную цену (больше нуля)!"); return; } // ВАЛИДАЦИЯ ЦЕНЫ
-            if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Эти даты уже заняты!"); return; }
-
-            state.bookings.push({
-                id: Date.now().toString(),
-                guest: document.getElementById('guestName').value || 'Гость',
-                checkIn: inD, checkOut: outD,
-                price: priceVal
-            });
-
-            save(); render(); 
-            e.target.reset(); 
-            
-            document.getElementById('checkIn').max = '';
-            document.getElementById('checkOut').min = '';
-            document.getElementById('liveTotal').innerText = "0 €";
-            
-            if(window.innerWidth < 1024) toggleMobileView('calendar');
-        };
-
-        window.openDeleteModal = (id) => {
-            state.bookingToDelete = id;
-            const b = state.bookings.find(x => x.id === id);
-            if(b) {
-                const startD = parseDateLocal(b.checkIn);
-                const endD = parseDateLocal(b.checkOut);
-                const n = Math.round((endD - startD) / 86400000);
-                
-                document.getElementById('deleteModalInfo').innerHTML = `
-                    <div class="font-black text-lg">${b.guest}</div>
-                    <div class="text-slate-500">${n} ночей · ${Math.round(n * b.price)} €</div>`;
-                document.getElementById('deleteModal').classList.remove('hidden');
-            }
-        };
-        
-        window.closeDeleteModal = () => document.getElementById('deleteModal').classList.add('hidden');
-        
-        document.getElementById('confirmDeleteBtn').onclick = () => {
-            state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
-            save(); render(); closeDeleteModal();
-        };
-
-        // ЗАПУСК ПРИЛОЖЕНИЯ
+function importData(event){
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    reader.onload = function(e){
+        state.bookings = JSON.parse(e.target.result);
+        save();
         render();
-    </script>
+    };
+    reader.readAsText(file);
+}
+
+render();
+
+</script>
 </body>
 </html>
