@@ -44,6 +44,7 @@
             border-bottom: 1px solid rgba(0,0,0,0.05); 
             transition: 0.2s; 
             user-select: none;
+            overflow: hidden;
         }
         .day-today { background: rgba(254, 243, 199, 0.7); }
         .day-num { 
@@ -74,6 +75,18 @@
         .booking-end { 
             background: linear-gradient(135deg, #bfdbfe, #2563eb); 
             border-radius: 0 6px 6px 0; margin-left: -1px; 
+        }
+        
+        /* НОВЫЙ ДИЗАЙН ДЛЯ ДНЯ ВЫЕЗДА */
+        .booking-checkout {
+            background: #f1f5f9; 
+            color: #64748b; 
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            width: 75%; /* Короткая полоска */
+            font-size: 9px;
+            padding-left: 4px;
+            box-shadow: none;
         }
 
         /* === АДАПТИВНОСТЬ === */
@@ -367,7 +380,6 @@
                     if (data && typeof data === 'object' && Array.isArray(data.bookings)) {
                         state.bookings = data.bookings.filter(b => b.id && b.checkIn && b.checkOut && b.price !== undefined);
                         
-                        // ИСПРАВЛЕНИЕ 2: Жесткая проверка массива цен (защита от поломки приложения)
                         if (Array.isArray(data.prices) && data.prices.length === 12) {
                             state.prices = data.prices;
                         } else {
@@ -456,7 +468,6 @@
             document.getElementById('price').value = '0';
             document.getElementById('liveTotal').innerText = '0 €';
             
-            // ИСПРАВЛЕНИЕ 3: Очистка имени гостя
             document.getElementById('guestName').value = '';
 
             render(); 
@@ -604,7 +615,8 @@
                 };
 
                 state.bookings.forEach(b => {
-                    if (dateStr >= b.checkIn && dateStr < b.checkOut) {
+                    // ТЕПЕРЬ ОХВАТЫВАЕМ ВЕСЬ ДИАПАЗОН ВКЛЮЧАЯ ДЕНЬ ВЫЕЗДА
+                    if (dateStr >= b.checkIn && dateStr <= b.checkOut) {
                         const nights = getDifferenceInNights(b.checkIn, b.checkOut);
                         const total = Math.round(nights * b.price);
                         
@@ -612,11 +624,13 @@
                         bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
 
                         const lastNight = addDaysToDateStr(b.checkOut, -1);
-
-                        // ИСПРАВЛЕНИЕ 1: Защита от XSS (взлом через имя)
                         const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-                        if (b.checkIn === dateStr && lastNight === dateStr) {
+                        // ЛОГИКА ОТРИСОВКИ С НОВЫМ ДНЕМ ВЫЕЗДА
+                        if (dateStr === b.checkOut) {
+                            bar.classList.add('booking-checkout');
+                            bar.innerHTML = '← Выезд';
+                        } else if (b.checkIn === dateStr && lastNight === dateStr) {
                             bar.classList.add('booking-start');
                             bar.style.borderRadius = '6px';
                             bar.innerHTML = `<span class="truncate px-1">${safeGuest} (${total}€)</span>`;
@@ -625,7 +639,7 @@
                             bar.innerHTML = `<span class="truncate pr-1">${safeGuest} (${total}€)</span>`;
                         } else if (lastNight === dateStr) {
                             bar.classList.add('booking-end');
-                            bar.innerHTML = '←';
+                            bar.innerHTML = '&nbsp;'; // Убрали стрелочку, просто закругляем конец синей полоски
                         } else {
                             bar.classList.add('booking-mid');
                             bar.innerHTML = '&nbsp;';
@@ -731,7 +745,6 @@
             if(b) {
                 const nights = getDifferenceInNights(b.checkIn, b.checkOut);
                 
-                // ИСПРАВЛЕНИЕ 1 (Продолжение): Защита от XSS в модальном окне удаления
                 const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
                 document.getElementById('deleteModalInfo').innerHTML = `
