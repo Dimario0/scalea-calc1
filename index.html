@@ -50,6 +50,7 @@
             width: 24px; height: 24px; 
             display: flex; align-items: center; justify-content: center; 
             border-radius: 50%; font-size: 11px; font-weight: 700; 
+            pointer-events: none; /* Чтобы клик проходил сквозь цифру на саму клетку */
         }
         .day-today .day-num { 
             background: #f59e0b; color: white; 
@@ -168,12 +169,16 @@
 
                 <div id="statsBlock" class="glass-dark p-5 rounded-3xl text-white">
                     <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Доход (Месяц)</h3>
-                    <div class="flex justify-between items-baseline">
+                    <div class="flex justify-between items-baseline mb-3">
                         <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
                         <div class="text-right">
                             <div id="statOccupancy" class="text-lg font-bold text-emerald-400">0%</div>
                             <div id="statDays" class="text-[10px] opacity-60">0 ночей</div>
                         </div>
+                    </div>
+                    <div class="border-t border-white/10 pt-3 flex justify-between items-center">
+                        <span class="text-[9px] opacity-50 font-black uppercase tracking-widest">За весь год</span>
+                        <span id="statYearIncome" class="text-sm font-bold text-emerald-400">0 €</span>
                     </div>
                 </div>
 
@@ -348,7 +353,6 @@
             reader.onload = function(e) {
                 try {
                     const data = JSON.parse(e.target.result);
-                    // ЖЕСТКАЯ ПРОВЕРКА СТРУКТУРЫ JSON
                     if (data && typeof data === 'object' && Array.isArray(data.bookings)) {
                         state.bookings = data.bookings.filter(b => b.id && b.checkIn && b.checkOut && b.price !== undefined);
                         state.prices = data.prices || [...defaultPrices];
@@ -473,7 +477,6 @@
                     nights++;
                 }
                 
-                // ЗАЩИТА ОТ ДЕЛЕНИЯ НА НОЛЬ
                 if (nights > 0) {
                     priceInput.value = +(total / nights).toFixed(2);
                 } else {
@@ -559,11 +562,18 @@
             for(let d=1; d<=daysInMonth; d++) {
                 const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 
-                const cell = createDiv(`day-cell p-1 relative ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
+                // Добавлен cursor-pointer и hover эффект для пустых дней
+                const cell = createDiv(`day-cell p-1 relative cursor-pointer hover:bg-slate-50 transition ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
                 cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
 
+                // ФИШКА ИЗ СТАРОГО КОДА: Клик по пустому дню перекидывает на вкладку брони с готовой датой
+                cell.onclick = () => {
+                    checkInInput.value = dateStr;
+                    handleDateLogic('in'); // Автоматом пересчитывает min дату выезда
+                    if(window.innerWidth < 1024) toggleMobileView('add'); // На мобилке кидает на экран брони
+                };
+
                 state.bookings.forEach(b => {
-                    // Отрисовка только по оплаченным ночам
                     if (dateStr >= b.checkIn && dateStr < b.checkOut) {
                         const startD = parseDateLocal(b.checkIn);
                         const endD = parseDateLocal(b.checkOut);
@@ -571,6 +581,7 @@
                         const total = Math.round(nights * b.price);
                         
                         const bar = createDiv('booking-bar');
+                        // Остановка клика, чтобы не срабатывал клик по самой клетке календаря (добавление новой брони)
                         bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
 
                         const lastNight = addDaysToDateStr(b.checkOut, -1);
@@ -604,16 +615,21 @@
         function updateStats() {
             const m = state.currentDate.getMonth();
             const y = state.currentDate.getFullYear();
-            let income = 0; let occupied = 0;
+            let income = 0; 
+            let occupied = 0;
+            let yearIncome = 0; // Для подсчета годового дохода
 
             state.bookings.forEach(b => {
                 let d = parseDateLocal(b.checkIn);
                 const end = parseDateLocal(b.checkOut);
                 
                 while(d < end) {
-                    if(d.getMonth() === m && d.getFullYear() === y) { 
-                        occupied++; 
-                        income += b.price; 
+                    if(d.getFullYear() === y) { 
+                        yearIncome += b.price; // Считаем всё за выбранный год
+                        if (d.getMonth() === m) {
+                            occupied++; 
+                            income += b.price; // Считаем только за выбранный месяц
+                        }
                     }
                     d.setDate(d.getDate() + 1);
                 }
@@ -623,6 +639,8 @@
             document.getElementById('statIncome').innerText = `${Math.round(income)} €`;
             document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
             document.getElementById('statDays').innerText = `${occupied} ночей`;
+            // Выводим статистику за год
+            document.getElementById('statYearIncome').innerText = `${Math.round(yearIncome)} €`;
         }
 
         function renderPricesList(id) {
@@ -657,7 +675,7 @@
             const priceVal = Number(document.getElementById('price').value);
             
             if (!inD || !outD || inD >= outD) { alert("Пожалуйста, проверьте даты!"); return; }
-            if (priceVal <= 0) { alert("Укажите корректную цену (больше нуля)!"); return; } // ВАЛИДАЦИЯ ЦЕНЫ
+            if (priceVal <= 0) { alert("Укажите корректную цену (больше нуля)!"); return; }
             if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Эти даты уже заняты!"); return; }
 
             state.bookings.push({
