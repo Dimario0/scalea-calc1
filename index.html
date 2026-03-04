@@ -50,7 +50,7 @@
             width: 24px; height: 24px; 
             display: flex; align-items: center; justify-content: center; 
             border-radius: 50%; font-size: 11px; font-weight: 700; 
-            pointer-events: none; /* Чтобы клик проходил сквозь цифру на саму клетку */
+            pointer-events: none; 
         }
         .day-today .day-num { 
             background: #f59e0b; color: white; 
@@ -284,7 +284,6 @@
     </div>
 
     <script>
-        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
         function parseDateLocal(dateStr) {
             if (!dateStr) return null;
             const [y, m, d] = dateStr.split('-');
@@ -308,7 +307,6 @@
             return `${y}-${m}-${day}`;
         }
 
-        // === БАЗОВАЯ ЛОГИКА И ХРАНЕНИЕ ===
         const STORAGE_KEY = 'scalea_data_v5';
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
@@ -423,10 +421,42 @@
         function changeMonth(delta) {
             state.currentDate.setDate(1); 
             state.currentDate.setMonth(state.currentDate.getMonth() + delta);
+            
+            // === АВТО-СИНХРОНИЗАЦИЯ ФОРМЫ С ВЫБРАННЫМ МЕСЯЦЕМ ===
+            const y = state.currentDate.getFullYear();
+            const m = String(state.currentDate.getMonth() + 1).padStart(2, '0');
+            
+            const inInput = document.getElementById('checkIn');
+            const outInput = document.getElementById('checkOut');
+            
+            // Ставим 1-е и 2-е число выбранного месяца
+            inInput.value = `${y}-${m}-01`;
+            outInput.value = `${y}-${m}-02`;
+            
+            outInput.min = `${y}-${m}-02`;
+            inInput.max = '';
+            
+            updateDatesFromTariffs();
+            // ====================================================
+
             render();
         }
 
-        function goToToday() { state.currentDate = new Date(); render(); }
+        function goToToday() { 
+            state.currentDate = new Date(); 
+            
+            // Сбрасываем форму, если нажали "Сегодня"
+            const inInput = document.getElementById('checkIn');
+            const outInput = document.getElementById('checkOut');
+            inInput.value = '';
+            outInput.value = '';
+            inInput.max = '';
+            outInput.min = '';
+            document.getElementById('price').value = '0';
+            document.getElementById('liveTotal').innerText = '0 €';
+
+            render(); 
+        }
 
         const calendarZone = document.getElementById('calendarView');
         let touchStartX = 0;
@@ -562,15 +592,13 @@
             for(let d=1; d<=daysInMonth; d++) {
                 const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
                 
-                // Добавлен cursor-pointer и hover эффект для пустых дней
                 const cell = createDiv(`day-cell p-1 relative cursor-pointer hover:bg-slate-50 transition ${dateStr === todayStr ? 'day-today' : 'bg-transparent'}`);
                 cell.innerHTML = `<div class="day-num ${dateStr === todayStr ? '' : 'text-slate-400'}">${d}</div>`;
 
-                // ФИШКА ИЗ СТАРОГО КОДА: Клик по пустому дню перекидывает на вкладку брони с готовой датой
                 cell.onclick = () => {
                     checkInInput.value = dateStr;
-                    handleDateLogic('in'); // Автоматом пересчитывает min дату выезда
-                    if(window.innerWidth < 1024) toggleMobileView('add'); // На мобилке кидает на экран брони
+                    handleDateLogic('in'); 
+                    if(window.innerWidth < 1024) toggleMobileView('add'); 
                 };
 
                 state.bookings.forEach(b => {
@@ -581,7 +609,6 @@
                         const total = Math.round(nights * b.price);
                         
                         const bar = createDiv('booking-bar');
-                        // Остановка клика, чтобы не срабатывал клик по самой клетке календаря (добавление новой брони)
                         bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
 
                         const lastNight = addDaysToDateStr(b.checkOut, -1);
@@ -617,7 +644,7 @@
             const y = state.currentDate.getFullYear();
             let income = 0; 
             let occupied = 0;
-            let yearIncome = 0; // Для подсчета годового дохода
+            let yearIncome = 0; 
 
             state.bookings.forEach(b => {
                 let d = parseDateLocal(b.checkIn);
@@ -625,10 +652,10 @@
                 
                 while(d < end) {
                     if(d.getFullYear() === y) { 
-                        yearIncome += b.price; // Считаем всё за выбранный год
+                        yearIncome += b.price; 
                         if (d.getMonth() === m) {
                             occupied++; 
-                            income += b.price; // Считаем только за выбранный месяц
+                            income += b.price; 
                         }
                     }
                     d.setDate(d.getDate() + 1);
@@ -639,7 +666,6 @@
             document.getElementById('statIncome').innerText = `${Math.round(income)} €`;
             document.getElementById('statOccupancy').innerText = `${Math.round((occupied/daysInM)*100)}%`;
             document.getElementById('statDays').innerText = `${occupied} ночей`;
-            // Выводим статистику за год
             document.getElementById('statYearIncome').innerText = `${Math.round(yearIncome)} €`;
         }
 
