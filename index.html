@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Умный калькулятор Скалея</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-database-compat.js"></script>
+
     <style>
         /* === БАЗА И ФОН === */
         body {
@@ -77,13 +82,12 @@
             border-radius: 0 6px 6px 0; margin-left: -1px; 
         }
         
-        /* НОВЫЙ ДИЗАЙН ДЛЯ ДНЯ ВЫЕЗДА */
         .booking-checkout {
             background: #f1f5f9; 
             color: #64748b; 
             border: 1px solid #e2e8f0;
             border-radius: 6px;
-            width: 75%; /* Короткая полоска */
+            width: 75%;
             font-size: 9px;
             padding-left: 4px;
             box-shadow: none;
@@ -117,6 +121,7 @@
         <header class="glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
             <div class="flex items-center gap-2">
                 <h1 class="text-xl font-black text-slate-800 tracking-tight pl-2">Скалея<span class="text-blue-600">.Кальк</span></h1>
+                <div id="cloudStatus" class="w-2 h-2 rounded-full bg-slate-300 ml-2 animate-pulse" title="Синхронизация..."></div>
             </div>
             
             <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
@@ -297,8 +302,22 @@
     </div>
 
     <script>
-        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
+        // === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ FIREBASE ===
+        const firebaseConfig = {
+            apiKey: "AIzaSyDO4oGcmQTY-_tE7ezz9WBSF5AaNlRrn7w",
+            authDomain: "scalea-calc.firebaseapp.com",
+            databaseURL: "https://scalea-calc-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "scalea-calc",
+            storageBucket: "scalea-calc.firebasestorage.app",
+            messagingSenderId: "540804268890",
+            appId: "1:540804268890:web:ac70313b30eeb23af82963"
+        };
         
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const dbRef = db.ref('scalea_app_data'); 
+
+        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
         function getDifferenceInNights(startStr, endStr) {
             const [y1, m1, d1] = startStr.split('-').map(Number);
             const [y2, m2, d2] = endStr.split('-').map(Number);
@@ -333,7 +352,6 @@
         }
 
         // === БАЗОВАЯ ЛОГИКА И ХРАНЕНИЕ ===
-        const STORAGE_KEY = 'scalea_data_v5';
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const defaultPrices = [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50];
 
@@ -344,17 +362,35 @@
             bookingToDelete: null
         };
 
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                state.bookings = parsed.bookings || [];
-                state.prices = parsed.prices || [...defaultPrices];
+        // СИНХРОНИЗАЦИЯ: Получение данных из облака
+        dbRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                state.bookings = data.bookings || [];
+                state.prices = data.prices || [...defaultPrices];
+            } else {
+                state.bookings = [];
+                state.prices = [...defaultPrices];
             }
-        } catch (e) { console.error("Ошибка загрузки", e); }
+            
+            // Зеленая вспышка при успешной загрузке/обновлении данных
+            const status = document.getElementById('cloudStatus');
+            status.classList.remove('bg-slate-300', 'animate-pulse');
+            status.classList.add('bg-emerald-400');
+            setTimeout(() => { status.classList.remove('bg-emerald-400'); status.classList.add('bg-slate-300'); }, 1000);
 
+            render();
+        }, (error) => {
+            console.error("Ошибка синхронизации:", error);
+            document.getElementById('cloudStatus').classList.replace('bg-slate-300', 'bg-rose-500');
+        });
+
+        // СИНХРОНИЗАЦИЯ: Отправка данных в облако
         function save() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookings: state.bookings, prices: state.prices }));
+            dbRef.set({
+                bookings: state.bookings,
+                prices: state.prices
+            });
         }
 
         function downloadBackup() {
@@ -371,7 +407,7 @@
         function uploadBackup(input) {
             const file = input.files[0];
             if (!file) return;
-            if(!confirm("Заменить текущие данные данными из файла?")) { input.value = ''; return; }
+            if(!confirm("Заменить текущие данные в облаке данными из файла?")) { input.value = ''; return; }
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -380,14 +416,15 @@
                     if (data && typeof data === 'object' && Array.isArray(data.bookings)) {
                         state.bookings = data.bookings.filter(b => b.id && b.checkIn && b.checkOut && b.price !== undefined);
                         
+                        // Жесткая проверка бэкапа тарифов
                         if (Array.isArray(data.prices) && data.prices.length === 12) {
                             state.prices = data.prices;
                         } else {
                             state.prices = [...defaultPrices];
                         }
                         
-                        save(); render();
-                        alert("Успешно загружено!");
+                        save(); 
+                        alert("Успешно загружено в облако!");
                         toggleMobileView('calendar');
                     } else { alert("Неверный формат файла базы данных!"); }
                 } catch { alert("Ошибка чтения файла!"); }
@@ -468,6 +505,7 @@
             document.getElementById('price').value = '0';
             document.getElementById('liveTotal').innerText = '0 €';
             
+            // Исправление: Полная очистка формы
             document.getElementById('guestName').value = '';
 
             render(); 
@@ -615,7 +653,6 @@
                 };
 
                 state.bookings.forEach(b => {
-                    // ТЕПЕРЬ ОХВАТЫВАЕМ ВЕСЬ ДИАПАЗОН ВКЛЮЧАЯ ДЕНЬ ВЫЕЗДА
                     if (dateStr >= b.checkIn && dateStr <= b.checkOut) {
                         const nights = getDifferenceInNights(b.checkIn, b.checkOut);
                         const total = Math.round(nights * b.price);
@@ -624,9 +661,10 @@
                         bar.onclick = (e) => { e.stopPropagation(); openDeleteModal(b.id); };
 
                         const lastNight = addDaysToDateStr(b.checkOut, -1);
+                        
+                        // Защита от XSS
                         const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-                        // ЛОГИКА ОТРИСОВКИ С НОВЫМ ДНЕМ ВЫЕЗДА
                         if (dateStr === b.checkOut) {
                             bar.classList.add('booking-checkout');
                             bar.innerHTML = '← Выезд';
@@ -639,7 +677,7 @@
                             bar.innerHTML = `<span class="truncate pr-1">${safeGuest} (${total}€)</span>`;
                         } else if (lastNight === dateStr) {
                             bar.classList.add('booking-end');
-                            bar.innerHTML = '&nbsp;'; // Убрали стрелочку, просто закругляем конец синей полоски
+                            bar.innerHTML = '&nbsp;'; 
                         } else {
                             bar.classList.add('booking-mid');
                             bar.innerHTML = '&nbsp;';
@@ -706,7 +744,7 @@
 
         function savePrices() {
             document.querySelectorAll('.price-input').forEach(inp => state.prices[inp.dataset.idx] = Number(inp.value));
-            save(); render();
+            save(); 
             if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) toggleMobileView('calendar');
         }
         document.getElementById('savePricesBtnDesktop').onclick = savePrices;
@@ -719,17 +757,21 @@
             const priceVal = Number(document.getElementById('price').value);
             
             if (!inD || !outD || inD >= outD) { alert("Пожалуйста, проверьте даты!"); return; }
-            if (priceVal <= 0) { alert("Укажите корректную цену (больше нуля)!"); return; }
+            
+            // Жесткая проверка цены
+            if (priceVal <= 0 || isNaN(priceVal)) { alert("Укажите корректную цену (больше нуля)!"); return; }
+            
             if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Эти даты уже заняты!"); return; }
 
             state.bookings.push({
                 id: Date.now().toString(),
-                guest: document.getElementById('guestName').value || 'Гость',
+                // Защита от пустого имени из пробелов
+                guest: document.getElementById('guestName').value.trim() || 'Гость',
                 checkIn: inD, checkOut: outD,
                 price: priceVal
             });
 
-            save(); render(); 
+            save(); 
             e.target.reset(); 
             
             document.getElementById('checkIn').max = '';
@@ -744,7 +786,6 @@
             const b = state.bookings.find(x => x.id === id);
             if(b) {
                 const nights = getDifferenceInNights(b.checkIn, b.checkOut);
-                
                 const safeGuest = String(b.guest).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
                 document.getElementById('deleteModalInfo').innerHTML = `
@@ -758,10 +799,11 @@
         
         document.getElementById('confirmDeleteBtn').onclick = () => {
             state.bookings = state.bookings.filter(b => b.id !== state.bookingToDelete);
-            save(); render(); closeDeleteModal();
+            save(); 
+            closeDeleteModal();
         };
 
-        // ЗАПУСК ПРИЛОЖЕНИЯ
+        // Запускаем пустую сетку. Основные данные подгрузятся из Firebase через полсекунды
         render();
     </script>
 </body>
