@@ -185,7 +185,6 @@
                      <div class="glass p-4 rounded-3xl hidden lg:block">
                         <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Базовые тарифы</h3>
                         <div id="desktopPricesList" class="h-40 overflow-y-auto custom-scrollbar space-y-1 pr-1"></div>
-                        <button id="savePricesBtnDesktop" class="w-full mt-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition">Сохранить тарифы</button>
                     </div>
                 </div>
 
@@ -251,7 +250,7 @@
         </div>
         <div class="p-4 overflow-y-auto flex-grow" id="mobilePricesList"></div>
         <div class="p-4 border-t bg-white safe-area-bottom">
-            <button id="savePricesBtnMobile" class="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-200">Сохранить</button>
+            <button onclick="toggleMobileView('calendar')" class="w-full bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg">Готово</button>
         </div>
     </div>
 
@@ -281,7 +280,7 @@
         const auth = firebase.auth();
         let dbRef = null; 
 
-        // === АВТОРИЗАЦИЯ И ЗАЩИТА ===
+        // === АВТОРИЗАЦИЯ ===
         auth.onAuthStateChanged((user) => {
             if (user) {
                 document.getElementById('loginScreen').classList.add('hidden');
@@ -328,7 +327,7 @@
 
         window.logout = () => { if(confirm("Выйти из системы?")) auth.signOut(); };
 
-        // === БЕЗОПАСНАЯ РАБОТА С ЛОКАЛЬНЫМИ ДАТАМИ ===
+        // === БЕЗОПАСНАЯ РАБОТА С ДАТАМИ ===
         function getDifferenceInNights(startStr, endStr) {
             const [y1, m1, d1] = startStr.split('-').map(Number);
             const [y2, m2, d2] = endStr.split('-').map(Number);
@@ -518,7 +517,12 @@
                 });
                 grid.appendChild(cell);
             }
-            updateStats(); renderPricesList('desktopPricesList');
+            updateStats(); 
+            
+            // Защита от затирания тарифов при вводе
+            if (!document.activeElement || !document.activeElement.classList.contains('price-input')) {
+                renderPricesList('desktopPricesList');
+            }
         }
 
         function createDiv(cls) { const d = document.createElement('div'); d.className = cls; return d; }
@@ -544,6 +548,12 @@
             document.getElementById('statYearIncome').innerText = `${Math.round(yInc)} €`;
         }
 
+        // Автосохранение отдельной цены
+        window.updateSinglePrice = (input) => {
+            state.prices[input.dataset.idx] = Number(input.value);
+            save(); // Мгновенная отправка в Firebase
+        };
+
         function renderPricesList(id) {
             const c = document.getElementById(id); if(!c) return; c.innerHTML = '';
             monthNames.forEach((name, i) => {
@@ -551,18 +561,11 @@
                 c.innerHTML += `<div class="flex justify-between items-center p-2 rounded-lg ${isActive ? 'bg-blue-50 border border-blue-200' : ''}">
                         <span class="text-xs font-bold text-slate-500 w-20">${name}</span>
                         <div class="flex items-center gap-1">
-                            <input type="number" value="${state.prices[i]}" data-idx="${i}" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
+                            <input type="number" value="${state.prices[i]}" data-idx="${i}" onchange="updateSinglePrice(this)" class="price-input w-16 p-1 text-right text-xs font-bold bg-white border rounded outline-none focus:ring-1 focus:ring-blue-500">
                             <span class="text-[10px] text-slate-400">€</span>
                         </div></div>`;
             });
         }
-
-        function savePrices() {
-            document.querySelectorAll('.price-input').forEach(inp => state.prices[inp.dataset.idx] = Number(inp.value));
-            save(); if(!document.getElementById('mobilePricesModal').classList.contains('hidden')) toggleMobileView('calendar');
-        }
-        document.getElementById('savePricesBtnDesktop').onclick = savePrices;
-        document.getElementById('savePricesBtnMobile').onclick = savePrices;
 
         document.getElementById('bookingForm').onsubmit = (e) => {
             e.preventDefault();
@@ -574,7 +577,6 @@
             if (priceVal <= 0 || isNaN(priceVal)) { alert("Укажите корректную цену!"); return; }
             if(state.bookings.some(b => inD < b.checkOut && outD > b.checkIn)) { alert("Даты заняты!"); return; }
 
-            // ДОБАВЛЯЕМ НОВЫЕ CRM ПОЛЯ
             state.bookings.push({ 
                 id: Date.now().toString(), 
                 guest: document.getElementById('guestName').value.trim() || 'Гость', 
@@ -589,7 +591,6 @@
             if(window.innerWidth < 1024) toggleMobileView('calendar');
         };
 
-        // КРАСИВАЯ КАРТОЧКА CRM
         window.openDeleteModal = (id) => {
             state.bookingToDelete = id; const b = state.bookings.find(x => x.id === id);
             if(b) {
@@ -598,7 +599,6 @@
                 const safePhone = b.phone ? String(b.phone).replace(/</g, "&lt;").replace(/>/g, "&gt;") : '';
                 const safeNotes = b.notes ? String(b.notes).replace(/</g, "&lt;").replace(/>/g, "&gt;") : '';
                 
-                // Цветные бейджики для источников бронирования
                 let sourceBadge = '';
                 if(b.source === 'Airbnb') sourceBadge = `<span class="bg-rose-100 text-rose-600 px-2 py-0.5 rounded text-[10px] font-bold ml-2 align-middle">Airbnb</span>`;
                 else if(b.source === 'Booking.com') sourceBadge = `<span class="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold ml-2 align-middle">Booking</span>`;
@@ -607,7 +607,6 @@
                 let detailsHtml = `<div class="font-black text-xl mb-1">${safeGuest}${sourceBadge}</div>`;
                 detailsHtml += `<div class="text-slate-500 font-bold mb-4">${nights} ночей · ${Math.round(nights * b.price)} €</div>`;
                 
-                // Если есть телефон, рисуем поле телефона
                 if (safePhone) {
                     detailsHtml += `
                         <div class="text-sm font-bold text-slate-700 bg-slate-50 p-3 rounded-lg mb-2 flex items-center justify-center gap-2 border border-slate-100">
@@ -616,7 +615,6 @@
                         </div>`;
                 }
                 
-                // Если есть заметки, рисуем поле заметок
                 if (safeNotes) {
                     detailsHtml += `
                         <div class="text-xs text-slate-600 bg-yellow-50 p-3 rounded-lg text-left italic border border-yellow-100">
