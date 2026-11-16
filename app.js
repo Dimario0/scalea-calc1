@@ -225,7 +225,7 @@
         if (isComplimentaryStay(booking)) return 'Залог не требуется';
         const payment = D.getAdvancePayment(booking);
         if (payment.status === 'unknown') return 'Залог: не отмечено';
-        if (payment.status === 'not_received') return 'Залог не получен';
+        if (payment.status === 'not_received') return D.getPaymentSummary(booking).fullyPaid ? '' : 'Залог не получен';
         return '✓ Залог получен' + (payment.amountCents === null ? '' : ' · ' + D.formatMoney(payment.amountCents));
     }
     function advanceClasses(booking) {
@@ -368,7 +368,7 @@
             if (query && !searchable.includes(query) && !(digits.length >= 3 && String(booking.phone || '').replace(/\D/g, '').includes(digits))) return false;
             if (source !== 'all' && (booking.inquirySource || 'unknown') !== source) return false;
             return filter === 'all' || (filter === 'upcoming' && booking.checkOut >= D.todayStr()) ||
-                (filter === 'deposit' && !isComplimentaryStay(booking) && advance.status === 'not_received') || (filter === 'balance' && summary.known && summary.remainingCents > 0) ||
+                (filter === 'deposit' && !isComplimentaryStay(booking) && !summary.fullyPaid && advance.status === 'not_received') || (filter === 'balance' && summary.known && summary.remainingCents > 0) ||
                 (filter === 'paid' && !isComplimentaryStay(booking) && summary.fullyPaid) || (filter === 'unknown' && !summary.known);
         });
         rows.sort((a, b) => {
@@ -386,11 +386,12 @@
         $('listSummary').textContent = rows.length ? `Осталось получить по отмеченным оплатам: ${D.formatMoney(balance)}${unknown ? ` · Оплата не уточнена: ${unknown}` : ''}` : '';
         $('bookingList').innerHTML = rows.length ? rows.map(booking => {
             const summary = D.getPaymentSummary(booking), advance = D.getAdvancePayment(booking);
+            const advanceText = advanceLabel(booking);
             return `<button type="button" class="ss-card booking-list-card" data-booking-id="${escapeHtml(booking.id)}">
                 <span class="ss-row"><strong>${escapeHtml(booking.guest || 'Гость')}</strong><span class="ss-amount">${D.formatMoney(D.getBookingTotalCents(booking))}</span></span>
                 <span class="ss-muted">${dateLabel(booking.checkIn)} → ${dateLabel(booking.checkOut)} · ${D.getNights(booking.checkIn, booking.checkOut)} ночей</span>
                 <span class="ss-row"><span class="ss-pill ${summary.fullyPaid ? 'ss-good' : summary.known ? 'ss-warn' : ''}">${paymentLabel(booking)}</span><span class="ss-muted">${escapeHtml(sourceLabels[booking.inquirySource] || sourceLabels.unknown)}</span></span>
-                <span class="ss-row"><span class="${isComplimentaryStay(booking) ? 'ss-muted' : advance.status === 'received' ? 'ss-good' : advance.status === 'not_received' ? 'ss-warn' : 'ss-muted'}">${advanceLabel(booking)}</span>${booking.guestCount ? `<span class="ss-muted">Гостей: ${booking.guestCount}</span>` : ''}</span>
+                ${advanceText || booking.guestCount ? `<span class="ss-row">${advanceText ? `<span class="${isComplimentaryStay(booking) ? 'ss-muted' : advance.status === 'received' ? 'ss-good' : advance.status === 'not_received' ? 'ss-warn' : 'ss-muted'}">${advanceText}</span>` : ''}${booking.guestCount ? `<span class="ss-muted">Гостей: ${booking.guestCount}</span>` : ''}</span>` : ''}
                 <span class="ss-muted">${summary.known ? `Получено ${D.formatMoney(summary.receivedCents)}` : summary.recordedCents ? `Отмечено поступлений ${D.formatMoney(summary.recordedCents)} · остаток неизвестен` : 'Сведения об оплате ещё не внесены'}</span>
             </button>`;
         }).join('') : '<div class="ss-empty">Брони не найдены. Измените поиск или фильтры.</div>';
@@ -429,8 +430,8 @@
                 const bar = createDiv('booking-bar');
                 bar.onclick = event => { event.stopPropagation(); openDeleteModal(booking.id); };
                 const payment = D.getAdvancePayment(booking);
-                bar.title = `${booking.guest || 'Гость'} · ${advanceLabel(booking)}`;
-                const marker = isComplimentaryStay(booking) ? '' : payment.status === 'received' ? '✓' : payment.status === 'not_received' ? '⏳' : '';
+                bar.title = `${booking.guest || 'Гость'} · ${advanceLabel(booking) || paymentLabel(booking)}`;
+                const marker = isComplimentaryStay(booking) ? '' : payment.status === 'received' ? '✓' : payment.status === 'not_received' && !D.getPaymentSummary(booking).fullyPaid ? '⏳' : '';
                 const lastNight = D.addDays(booking.checkOut, -1), label = `${marker ? `<span class="shrink-0 pl-1" aria-label="${advanceLabel(booking)}">${marker}</span>` : ''}<span class="truncate px-1">${escapeHtml(booking.guest || 'Гость')}${booking.notes ? ' 📝' : ''} (${D.formatMoney(D.getBookingTotalCents(booking))})</span>`;
                 if (date === booking.checkOut) { bar.classList.add('booking-checkout'); bar.textContent = '← Выезд'; }
                 else if (date === booking.checkIn) { bar.classList.add('booking-start'); if (lastNight === date) bar.style.borderRadius = '6px'; bar.innerHTML = label; }
@@ -480,10 +481,11 @@
         const nights = D.getNights(booking.checkIn, booking.checkOut);
         const preparationOpen = $('bookingPrepDetails')?.open === true;
         const phone = String(booking.phone || ''), cleanPhone = phone.replace(/\D/g, '');
+        const advanceText = advanceLabel(booking);
         $('deleteModalInfo').innerHTML = `<div class="font-black text-xl mb-2">${escapeHtml(booking.guest || 'Гость')}</div>
             <div class="text-xs text-slate-500 mb-2">${escapeHtml(booking.checkIn)} → ${escapeHtml(booking.checkOut)}</div>
             <div class="font-bold text-blue-700 mb-4">${nights} ночей · ${D.formatMoney(D.getBookingTotalCents(booking))}</div>
-            <div id="modalCurrentAdvance" class="${advanceClasses(booking)}">${advanceLabel(booking)}</div>
+            ${advanceText ? `<div id="modalCurrentAdvance" class="${advanceClasses(booking)}">${advanceText}</div>` : ''}
             ${cleanPhone ? `<a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="block text-sm text-emerald-700 bg-emerald-50 p-3 rounded-lg mb-2">WhatsApp · ${escapeHtml(phone)}</a>` : ''}
             <details id="bookingPrepDetails" class="optional-details"><summary><span>Гости, подготовка и заметки</span></summary><div class="optional-fields">
             <div class="ss-row ss-muted"><span>Гостей: ${booking.guestCount || 'не указано'}</span><span>${sourceLabels[booking.inquirySource] || sourceLabels.unknown}</span></div>
