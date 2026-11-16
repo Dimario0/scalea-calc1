@@ -10,7 +10,7 @@ EUR per paid night, whole apartment, up to four guests. January–December:
 
 Cleaning and electricity are included in the guest price. There are no OTA schedules or commissions in the calculator. Monthly winter offers remain separate. No minimum stay beyond valid arrival/departure dates is imposed.
 
-Each automatic quote uses the rate for every paid night, with checkout excluded. Automatic rates apply only to nights in 2027; other dates require a manual nightly price. New bookings store an exact total in cents and a nightly breakdown. Historical records keep all their original fields and their former displayed total; changing the default schedule does not recalculate them. Legacy `prices` data is preserved and is not used as the 2027 schedule.
+Each automatic quote uses the rate for every paid night, with checkout excluded. Automatic rates apply only to nights in 2027; other dates require a manual nightly price. New bookings store an exact total in cents and a nightly breakdown. Historical records keep all their original fields and their former displayed total; changing the default schedule does not recalculate them. For records without saved nightly rates, statistics allocate that preserved total over the stay in integer cents, with any remainder assigned to the first nights. This keeps monthly and yearly statistics consistent with the booking card without rewriting old records. Legacy `prices` data is preserved and is not used as the 2027 schedule.
 
 ## Shared saving
 
