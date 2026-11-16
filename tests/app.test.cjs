@@ -92,12 +92,14 @@ class World {
         this.heldAcknowledgments = [];
     }
 
-    client(name, { load = true, online = true, signedIn = true, withoutRecoveryUI = false } = {}) {
+    client(name, { load = true, online = true, signedIn = true, withoutRecoveryUI = false,
+        locationHref = 'https://synthetic.example.invalid/calculator/?view=calendar#calendar' } = {}) {
         const ui = dom({ withoutRecoveryUI });
         const c = {
             name, ui, connected: false, cache: null, subscriptions: { data: [], connection: [] },
             paths: [], transactions: [], authCallback: null, blob: null, timers: [], windows: [], signOutCalls: 0, uuid: 0,
-            signInCalls: [], passwordResetRequests: []
+            signInCalls: [], passwordResetRequests: [], confirmCalls: [], confirmResult: true,
+            navigationAttempts: [], navigations: [], navigationError: null
         };
         const kindForPath = pathName => pathName === '.info/connected' ? 'connection' : 'data';
         const refs = new Map();
@@ -143,11 +145,23 @@ class World {
             request.settled = true; request.reject(Object.assign(new Error('SYNTHETIC_AUTH_ERROR'), { code }));
         };
         const windowListeners = new Map();
+        class SyntheticURL extends URL {
+            static createObjectURL(blob) { c.blob = blob; return 'blob:synthetic'; }
+            static revokeObjectURL() {}
+        }
         const context = {
             document: ui.document, innerWidth: 1280, Blob,
-            URL: { createObjectURL: blob => { c.blob = blob; return 'blob:synthetic'; }, revokeObjectURL() {} },
+            URL: SyntheticURL,
+            location: {
+                href: locationHref,
+                replace(value) {
+                    c.navigationAttempts.push(String(value));
+                    if (c.navigationError) throw c.navigationError;
+                    c.navigations.push(String(value));
+                }
+            },
             crypto: { randomUUID: () => `synthetic-${name}-${++c.uuid}` },
-            confirm: () => true,
+            confirm: message => { c.confirmCalls.push(message); return c.confirmResult; },
             setTimeout: callback => { c.timers.push(callback); return c.timers.length; },
             addEventListener: (event, callback) => windowListeners.set(event, callback),
             navigator: { clipboard: { writeText: async () => {} } },
@@ -175,6 +189,7 @@ class World {
         c.submit = () => c.get('bookingForm').onsubmit({ preventDefault() {} });
         c.signIn = () => c.get('loginForm').onsubmit({ preventDefault() {} });
         c.resetPassword = () => c.get('resetPasswordBtn').onclick();
+        c.refresh = () => c.context.refreshCalculator();
         c.remove = id => { c.context.openDeleteModal(id); return c.get('confirmDeleteBtn').onclick(); };
         c.setAdvance = (prefix, status, amount = '', receivedOn = '') => {
             const ids = prefix === 'modal'
@@ -246,6 +261,163 @@ class World {
         op.reject(Object.assign(new Error('SYNTHETIC_PERMISSION_DENIED'), { code: 'PERMISSION_DENIED' }));
     }
 }
+
+function refreshDraft(kind) {
+    const old = booking('refresh-record', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' } });
+    const w = new World({ bookings: [old] }), c = w.client('REFRESH');
+    let fields;
+    if (kind === 'new') {
+        c.fill('2027-03-01', '2027-03-04', 60, 'KEEP NEW REFRESH DRAFT');
+        c.get('guestNotes').value = 'KEEP NEW NOTE';
+        fields = ['guestName', 'checkIn', 'checkOut', 'price', 'guestNotes'];
+    } else if (kind === 'edit') {
+        c.edit(old.id); c.get('guestNotes').value = 'KEEP EDIT REFRESH DRAFT';
+        c.get('agreedTotal').value = '275'; c.get('agreedTotal').dispatch('input');
+        fields = ['guestName', 'checkIn', 'checkOut', 'guestNotes', 'agreedTotal'];
+    } else if (kind === 'advance') {
+        c.context.openDeleteModal(old.id); c.setAdvance('modal', 'received', '50', '2027-01-30');
+        fields = ['modalDepositStatus', 'modalDepositAmount', 'modalDepositDate'];
+    } else {
+        assert.equal(kind, 'payment');
+        c.context.openDeleteModal(old.id); c.setPayment('35', '2027-01-30', 'KEEP PAYMENT REFRESH DRAFT');
+        c.context.closeDeleteModal();
+        fields = ['paymentAmount', 'paymentDate', 'paymentNote'];
+    }
+    return { w, c, values: Object.fromEntries(fields.map(id => [id, c.get(id).value])) };
+}
+
+test('refresh preserves the app URL and refreshes untouched forms without a confirmation or a write', async () => {
+    const locationHref = 'https://synthetic.example.invalid/nested/calculator.html?mode=review&tag=a&tag=b&_refresh=old&_refresh=older#bookings';
+    for (const view of ['initial', 'open-card', 'edit']) {
+        const old = booking('refresh-record', '2027-02-01', '2027-02-06', {
+            advancePayment: { status: 'received', amountCents: 5000, receivedOn: '2027-01-30' }
+        });
+        const w = new World({ bookings: [old] }), c = w.client('REFRESH', { locationHref });
+        if (view === 'open-card') c.context.openDeleteModal(old.id);
+        if (view === 'edit') c.edit(old.id);
+        const earliest = Date.now(); await c.refresh(); const latest = Date.now();
+        assert.equal(c.confirmCalls.length, 0, view);
+        assert.equal(c.navigations.length, 1, view);
+        const target = new URL(c.navigations[0]), original = new URL(locationHref);
+        assert.equal(target.origin, original.origin); assert.equal(target.pathname, original.pathname); assert.equal(target.hash, original.hash);
+        assert.equal(target.searchParams.get('mode'), 'review'); assert.deepEqual(target.searchParams.getAll('tag'), ['a', 'b']);
+        assert.equal(target.searchParams.getAll('_refresh').length, 1);
+        const refreshedAt = Number(target.searchParams.get('_refresh'));
+        assert.ok(Number.isInteger(refreshedAt) && refreshedAt >= earliest && refreshedAt <= latest);
+        assert.equal(c.get('refreshCalculatorBtn').disabled, true);
+        assert.equal(c.get('bookingFields').disabled, true, 'Reloading must block edits until navigation completes');
+        assert.match(c.get('refreshCalculatorBtn').textContent, /Обновляем/);
+        await c.refresh();
+        assert.equal(c.navigationAttempts.length, 1, 'A second click cannot start another navigation');
+        assert.equal(c.transactions.length, 0); assert.equal(c.signOutCalls, 0);
+        assert.deepEqual(w.data.bookings, [old]);
+    }
+});
+
+test('canceling refresh preserves new, edited, advance and closed-card payment drafts', async () => {
+    for (const kind of ['new', 'edit', 'advance', 'payment']) {
+        const { w, c, values } = refreshDraft(kind), before = clone(w.data);
+        c.confirmResult = false; await c.refresh();
+        assert.equal(c.confirmCalls.length, 1, kind);
+        assert.equal(c.navigationAttempts.length, 0, kind);
+        for (const [id, value] of Object.entries(values)) assert.equal(c.get(id).value, value, `${kind}: ${id}`);
+        assert.equal(c.get('refreshCalculatorBtn').disabled, false);
+        assert.equal(c.transactions.length, 0); assert.equal(c.signOutCalls, 0); assert.deepEqual(w.data, before);
+    }
+});
+
+test('canceling refresh preserves a tariff recalculation even when the visible price and total stay the same', async () => {
+    const old = booking('same-total-recalculation', '2027-06-30', '2027-07-02', {
+        price: 97.5, totalCents: 19500,
+        nightlyRates: [{ date: '2027-06-30', cents: 9750 }, { date: '2027-07-01', cents: 9750 }]
+    });
+    const w = new World({ bookings: [old] }), c = w.client('REFRESH');
+    c.edit(old.id);
+    const fields = ['checkIn', 'checkOut', 'price', 'agreedTotal'];
+    const before = Object.fromEntries(fields.map(id => [id, String(c.get(id).value)]));
+    c.get('recalculateBooking').onclick();
+    assert.deepEqual(Object.fromEntries(fields.map(id => [id, String(c.get(id).value)])), before);
+    c.confirmResult = false; await c.refresh();
+    assert.equal(c.confirmCalls.length, 1, 'Changing only the nightly tariff breakdown is still an unsaved edit');
+    assert.equal(c.navigationAttempts.length, 0); assert.equal(c.transactions.length, 0);
+    assert.deepEqual(w.data.bookings, [old]);
+    const saved = c.submit(); w.commit(c); await saved;
+    assert.deepEqual(w.data.bookings[0].nightlyRates, [
+        { date: '2027-06-30', cents: 8500 }, { date: '2027-07-01', cents: 11000 }
+    ], 'The canceled refresh keeps the quote available for a later intentional save');
+    assert.equal(D.getBookingTotalCents(w.data.bookings[0]), 19500);
+    assert.equal(c.navigationAttempts.length, 0);
+});
+
+test('confirmed refresh prompts once for each kind of draft and does not save or sign out', async () => {
+    for (const kind of ['new', 'edit', 'advance', 'payment']) {
+        const { w, c } = refreshDraft(kind), before = clone(w.data);
+        await c.refresh();
+        assert.equal(c.confirmCalls.length, 1, kind);
+        assert.equal(c.navigations.length, 1, kind);
+        assert.equal(c.transactions.length, 0); assert.equal(c.signOutCalls, 0); assert.deepEqual(w.data, before);
+    }
+});
+
+test('refresh cannot interrupt a pending save even after its server snapshot arrives', async () => {
+    const w = new World(), c = w.client('REFRESH');
+    c.fill('2027-03-01', '2027-03-04', 60, 'PENDING REFRESH DRAFT');
+    const pending = c.submit();
+    assert.equal(c.get('refreshCalculatorBtn').disabled, true);
+    await c.refresh();
+    assert.equal(c.navigationAttempts.length, 0); assert.equal(c.confirmCalls.length, 0);
+    assert.equal(c.get('guestName').value, 'PENDING REFRESH DRAFT');
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    w.commit(c, { holdAck: true }); await flush();
+    await c.refresh();
+    assert.equal(c.navigationAttempts.length, 0, 'A listener event is not the save acknowledgment');
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    w.acknowledge(); await pending;
+    assert.equal(c.get('refreshCalculatorBtn').disabled, false);
+    await c.refresh();
+    assert.equal(c.navigations.length, 1); assert.equal(c.confirmCalls.length, 0);
+    assert.equal(c.transactions.length, 1); assert.equal(w.data.bookings.length, 1);
+});
+
+test('offline refresh retains the loaded calendar and draft until connectivity returns', async () => {
+    const { w, c, values } = refreshDraft('new'), before = clone(w.data);
+    c.connect(false); await c.refresh();
+    assert.equal(c.navigationAttempts.length, 0); assert.equal(c.confirmCalls.length, 0);
+    for (const [id, value] of Object.entries(values)) assert.equal(c.get(id).value, value, id);
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    assert.deepEqual((await c.export()).bookings, before.bookings);
+    assert.equal(c.get('refreshCalculatorBtn').disabled, false);
+    c.connect(true); c.confirmResult = false; await c.refresh();
+    assert.equal(c.confirmCalls.length, 1); assert.equal(c.navigationAttempts.length, 0);
+    assert.equal(c.transactions.length, 0); assert.deepEqual(w.data, before);
+});
+
+test('refresh remains available online before data loads or after a read failure', async () => {
+    for (const failed of [false, true]) {
+        const w = new World(), c = w.client('REFRESH', { load: false });
+        if (failed) c.failRead();
+        assert.equal(c.get('bookingFields').disabled, true);
+        await c.refresh();
+        assert.equal(c.navigations.length, 1, failed ? 'read failure' : 'initial loading');
+        assert.equal(c.confirmCalls.length, 0); assert.equal(c.transactions.length, 0); assert.equal(c.signOutCalls, 0);
+    }
+});
+
+test('a navigation failure retains the draft and makes refresh available for another explicit attempt', async () => {
+    const { w, c, values } = refreshDraft('edit'), before = clone(w.data);
+    c.navigationError = new Error('SYNTHETIC_NAVIGATION_ERROR');
+    await c.refresh();
+    assert.equal(c.confirmCalls.length, 1); assert.equal(c.navigationAttempts.length, 1); assert.equal(c.navigations.length, 0);
+    assert.equal(c.get('refreshCalculatorBtn').disabled, false);
+    assert.equal(c.get('bookingFields').disabled, false);
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    assert.ok(c.get('actionError').textContent.length > 0);
+    assert.doesNotMatch(c.get('actionError').textContent, /SYNTHETIC_NAVIGATION_ERROR/);
+    for (const [id, value] of Object.entries(values)) assert.equal(c.get(id).value, value, id);
+    c.navigationError = null; await c.refresh();
+    assert.equal(c.confirmCalls.length, 2); assert.equal(c.navigations.length, 1);
+    assert.equal(c.transactions.length, 0); assert.equal(c.signOutCalls, 0); assert.deepEqual(w.data, before);
+});
 
 test('password recovery makes no requests on load, auth transitions or an ordinary sign-in', async () => {
     const w = new World(), c = w.client('AUTH', { signedIn: false });

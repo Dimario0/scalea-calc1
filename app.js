@@ -7,9 +7,12 @@
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
     const initialDate = new Date();
     const state = { data: { bookings: [] }, currentDate: preview ? new Date(2027, 5, 1) : initialDate.getFullYear() < 2027 ? new Date(2027, 0, 1) : initialDate, selectedBooking: null, advanceBase: null, editingBooking: null, currentView: 'calendar' };
-    let loaded = false, online = false, saving = false, readError = false, writeError = false;
+    let loaded = false, online = false, saving = false, refreshing = false, readError = false, writeError = false;
     let adapter = null, auth = null, generation = 0, activeQuote = null, advanceDirty = false, paymentAttempt = null;
     const checkInInput = $('checkIn'), checkOutInput = $('checkOut'), priceInput = $('price');
+    const bookingDraftFields = ['guestName', 'guestPhone', 'guestNotes', 'checkIn', 'checkOut', 'price', 'agreedTotal', 'guestCount', 'arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource', 'depositStatus', 'depositAmount', 'depositDate'];
+    const bookingDraftFingerprint = () => JSON.stringify({ fields: bookingDraftFields.map(id => String($(id).value ?? '')), quote: activeQuote });
+    let bookingDraftBaseline = bookingDraftFingerprint();
     const errors = {
         INVALID_DATE: 'Проверьте дату: нужен настоящий день календаря.',
         INVALID_DATES: 'Дата выезда должна быть позже даты заезда.',
@@ -50,10 +53,12 @@
         $('dataModalError').classList.remove('hidden');
     }
     function clearError() { ['actionError', 'deleteModalError', 'dataModalError'].forEach(id => $(id).classList.add('hidden')); }
-    function canWrite() { return loaded && online && !saving && !readError; }
+    function canWrite() { return loaded && online && !saving && !refreshing && !readError; }
     function renderSync() {
         let kind, text;
-        if (saving) {
+        if (refreshing) {
+            kind = 'loading'; text = 'Обновляем калькулятор…';
+        } else if (saving) {
             kind = 'saving';
             text = online ? 'Сохраняем на сервере… Не закрывайте калькулятор до подтверждения.' : 'Связь прервалась во время сохранения. Ждём подключения — не закрывайте калькулятор.';
         } else if (readError) {
@@ -77,7 +82,12 @@
         $('cloudStatus').className = 'w-2 h-2 rounded-full ml-2 ' + (kind === 'ready' ? 'bg-emerald-400' : kind === 'error' ? 'bg-rose-500' : 'bg-amber-400');
         $('cloudStatus').title = text;
         document.querySelectorAll('[data-write]').forEach(element => { element.disabled = !canWrite(); });
-        document.querySelectorAll('[data-export]').forEach(element => { element.disabled = !loaded || saving; });
+        document.querySelectorAll('[data-export]').forEach(element => { element.disabled = !loaded || saving || refreshing; });
+        const refreshButton = $('refreshCalculatorBtn');
+        if (refreshButton) {
+            refreshButton.disabled = saving || refreshing;
+            refreshButton.textContent = refreshing ? 'Обновляем…' : 'Обновить';
+        }
         const current = state.selectedBooking && state.data.bookings.find(record => record.id === state.selectedBooking.id);
         const payments = current && D.getPaymentSummary(current);
         $('paymentEditor').disabled = !canWrite() || !payments || !payments.known || payments.fullyPaid;
@@ -166,6 +176,7 @@
         $('depositStatus').value = 'unknown';
         refreshAdvanceForm('deposit', null);
         $('quoteHint').textContent = 'Прямые цены 2027 · квартира целиком · до 4 гостей. Уборка и электричество включены.';
+        bookingDraftBaseline = bookingDraftFingerprint();
     }
     function quoteMatches() {
         return activeQuote && activeQuote.start === checkInInput.value && activeQuote.end === checkOutInput.value && Number(priceInput.value) === activeQuote.value.averagePrice;
@@ -308,6 +319,7 @@
         $('cleaningStatus').value = booking.cleaningStatus || 'unknown'; $('inquirySource').value = booking.inquirySource || 'unknown';
         $('quoteHint').textContent = 'Согласованная стоимость сохранится при изменении дат. Пересчёт по тарифам — только по отдельной кнопке.';
         clearError(); calculateTotal(); toggleMobileView('add');
+        bookingDraftBaseline = bookingDraftFingerprint();
     };
 
     window.downloadBackup = () => {
@@ -582,6 +594,23 @@
         if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 40) changeMonth(dx > 0 ? 1 : -1);
         touchStart = null;
     }, { passive: true });
+    window.refreshCalculator = () => {
+        if (saving) { showError('Дождитесь подтверждения сохранения, затем обновите калькулятор.'); return; }
+        if (refreshing) return;
+        if (!online) { showError('Нет связи. Подключитесь к интернету и повторите обновление.'); return; }
+        const hasDraft = bookingDraftFingerprint() !== bookingDraftBaseline || advanceDirty ||
+            ['paymentAmount', 'paymentDate', 'paymentNote'].some(id => $(id).value !== '');
+        if (hasDraft && !confirm('Есть несохранённые изменения. Обновить калькулятор и отменить их?')) return;
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('_refresh', String(Date.now()));
+            refreshing = true; clearError(); renderSync();
+            window.location.replace(url.href);
+        } catch {
+            refreshing = false; renderSync();
+            showError('Не удалось обновить калькулятор. Повторите попытку.');
+        }
+    };
     window.addEventListener('beforeunload', event => { if (saving) { event.preventDefault(); event.returnValue = ''; } });
     window.logout = () => {
         if (saving) { showError('Дождитесь подтверждения сохранения перед выходом.'); return; }
