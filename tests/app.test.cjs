@@ -1,0 +1,398 @@
+'use strict';
+
+// The real app runs against an in-memory DOM and a retrying Firebase substitute.
+// No SDK, browser, network, accounts or persisted calendar are used by these tests.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const D = require('../data.js');
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+const dataSource = fs.readFileSync(path.join(__dirname, '..', 'data.js'), 'utf8');
+const clone = value => JSON.parse(JSON.stringify(value));
+const snapshot = value => ({ val: () => clone(value) });
+const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+
+function booking(id, start, end, extra = {}) {
+    return { id, guest: 'SYNTHETIC', phone: '', notes: '', source: 'Прямая бронь', checkIn: start, checkOut: end, price: 60, ...extra };
+}
+
+function dom() {
+    const elements = new Map();
+    const documentListeners = new Map();
+    const controls = ['bookingFields', 'confirmDeleteBtn', 'importDesktop', 'importMobile'];
+    const exports = ['exportDesktop', 'exportMobile'];
+    const get = id => {
+        if (elements.has(id)) return elements.get(id);
+        let classes = new Set(['actionError', 'deleteModalError', 'deleteModal', 'loginError', 'appContainer', 'previewBanner'].includes(id) ? ['hidden'] : []);
+        let html = '';
+        const listeners = new Map();
+        const element = {
+            id, value: '', textContent: '', min: '', max: '', disabled: false,
+            style: {}, dataset: {}, children: [], tagName: 'DIV', resetCount: 0,
+            classList: {
+                add: (...names) => names.forEach(name => classes.add(name)),
+                remove: (...names) => names.forEach(name => classes.delete(name)),
+                contains: name => classes.has(name),
+                toggle(name, force) {
+                    const on = force === undefined ? !classes.has(name) : Boolean(force);
+                    if (on) classes.add(name); else classes.delete(name);
+                    return on;
+                }
+            },
+            addEventListener: (name, listener) => listeners.set(name, listener),
+            dispatch: (name, event = {}) => listeners.get(name)?.(event),
+            appendChild(child) { this.children.push(child); },
+            click() { this.clicked = true; }, remove() { this.removed = true; },
+            reset() {
+                this.resetCount++;
+                ['guestName', 'guestPhone', 'guestNotes', 'checkIn', 'checkOut', 'price'].forEach(name => { get(name).value = ''; });
+            }
+        };
+        Object.defineProperty(element, 'className', { get: () => [...classes].join(' '), set: value => { classes = new Set(value.split(/\s+/).filter(Boolean)); } });
+        Object.defineProperty(element, 'innerHTML', { get: () => html, set: value => { html = value; element.children = []; } });
+        elements.set(id, element);
+        return element;
+    };
+    let created = 0;
+    const document = {
+        body: { dataset: {}, appendChild() {} },
+        getElementById: get,
+        createElement: type => { const element = get(`created-${type}-${++created}`); element.tagName = type.toUpperCase(); return element; },
+        querySelectorAll: selector => (selector === '[data-write]' ? controls : selector === '[data-export]' ? exports : []).map(get),
+        addEventListener: (name, listener) => documentListeners.set(name, listener)
+    };
+    return { document, get, controls, exports, documentListeners };
+}
+
+class World {
+    constructor(data = { bookings: [] }) {
+        this.data = clone(data);
+        this.clients = [];
+        this.pending = [];
+        this.heldAcknowledgments = [];
+    }
+
+    client(name, { load = true, online = true, signedIn = true } = {}) {
+        const ui = dom();
+        const c = {
+            name, ui, connected: false, cache: null, subscriptions: { data: [], connection: [] },
+            paths: [], transactions: [], authCallback: null, blob: null, timers: [], windows: [], signOutCalls: 0, uuid: 0
+        };
+        const kindForPath = pathName => pathName === '.info/connected' ? 'connection' : 'data';
+        const refs = new Map();
+        const ref = pathName => {
+            c.paths.push(pathName);
+            if (refs.has(pathName)) return refs.get(pathName);
+            const kind = kindForPath(pathName);
+            const result = {
+                on: (event, callback, error) => { assert.equal(event, 'value'); c.subscriptions[kind].push({ callback, error }); },
+                off: (event, callback) => { assert.equal(event, 'value'); c.subscriptions[kind] = c.subscriptions[kind].filter(item => item.callback !== callback); },
+                set: () => { throw new Error('Whole-state set is forbidden'); },
+                transaction: (update, completion, applyLocally) => {
+                    assert.equal(applyLocally, false, 'No local success events before server confirmation');
+                    assert.equal(completion, undefined);
+                    let resolve, reject;
+                    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+                    const op = { client: c, update, resolve, reject, retries: 1, initial: update(clone(c.cache)) };
+                    c.transactions.push(op);
+                    if (op.initial === undefined) resolve({ committed: false, snapshot: snapshot(c.cache) });
+                    else this.pending.push(op);
+                    return promise;
+                }
+            };
+            refs.set(pathName, result);
+            return result;
+        };
+        const auth = {
+            onAuthStateChanged: callback => { c.authCallback = callback; },
+            signInWithEmailAndPassword: async () => ({}),
+            signOut: async () => { c.signOutCalls++; c.authenticate(null); }
+        };
+        const windowListeners = new Map();
+        const context = {
+            document: ui.document, innerWidth: 1280, Blob,
+            URL: { createObjectURL: blob => { c.blob = blob; return 'blob:synthetic'; }, revokeObjectURL() {} },
+            crypto: { randomUUID: () => `synthetic-${name}-${++c.uuid}` },
+            confirm: () => true,
+            setTimeout: callback => { c.timers.push(callback); return c.timers.length; },
+            addEventListener: (event, callback) => windowListeners.set(event, callback),
+            navigator: { clipboard: { writeText: async () => {} } },
+            open: (...args) => c.windows.push(args),
+            firebase: { initializeApp: config => assert.equal(Object.keys(config).length, 0), auth: () => auth, database: () => ({ ref }) }
+        };
+        context.window = context;
+        c.context = vm.createContext(context);
+        c.run = code => vm.runInContext(code, c.context, { timeout: 1000 });
+        c.get = ui.get;
+        c.authenticate = user => c.authCallback(user);
+        c.connect = connected => {
+            c.connected = connected;
+            c.subscriptions.connection.forEach(item => item.callback(snapshot(connected)));
+        };
+        c.receive = value => {
+            c.cache = clone(value);
+            c.subscriptions.data.forEach(item => item.callback(snapshot(value)));
+        };
+        c.failRead = () => c.subscriptions.data.forEach(item => item.error(Object.assign(new Error('synthetic denied'), { code: 'PERMISSION_DENIED' })));
+        c.fill = (start, end, price = 60, guest = 'SYNTHETIC') => {
+            c.get('checkIn').value = start; c.get('checkOut').value = end;
+            c.get('price').value = String(price); c.get('guestName').value = guest;
+        };
+        c.submit = () => c.get('bookingForm').onsubmit({ preventDefault() {} });
+        c.remove = id => { c.context.openDeleteModal(id); return c.get('confirmDeleteBtn').onclick(); };
+        c.import = value => {
+            const input = { value: 'selected', files: [{ size: 100, text: async () => JSON.stringify(value) }] };
+            return c.context.uploadBackup(input);
+        };
+        c.export = async () => { c.context.downloadBackup(); return c.blob ? JSON.parse(await c.blob.text()) : null; };
+        c.beforeUnload = () => {
+            const event = { prevented: false, preventDefault() { this.prevented = true; } };
+            windowListeners.get('beforeunload')?.(event);
+            return event;
+        };
+        c.run(dataSource);
+        c.run('const firebaseConfig = {};\n' + appSource);
+        this.clients.push(c);
+        if (signedIn) c.authenticate({ uid: `synthetic-user-${name}` });
+        if (online) c.connect(true);
+        if (load && signedIn) c.receive(this.data);
+        return c;
+    }
+
+    commit(client, { holdAck = false } = {}) {
+        const op = this.pending.find(item => item.client === client);
+        assert.ok(op, `Expected a pending write for ${client.name}`);
+        assert.equal(client.connected, true, 'A disconnected transaction waits for reconnection');
+        this.pending.splice(this.pending.indexOf(op), 1);
+        op.retries++;
+        const next = op.update(clone(this.data));
+        const result = { committed: next !== undefined, snapshot: snapshot(next === undefined ? this.data : next) };
+        if (next !== undefined) {
+            this.data = clone(next);
+            this.clients.filter(item => item.connected).forEach(item => item.receive(this.data));
+        }
+        if (holdAck) this.heldAcknowledgments.push(() => op.resolve(result));
+        else op.resolve(result);
+        return op;
+    }
+
+    acknowledge() { assert.ok(this.heldAcknowledgments.length); this.heldAcknowledgments.shift()(); }
+
+    reject(client) {
+        const op = this.pending.find(item => item.client === client);
+        assert.ok(op);
+        this.pending.splice(this.pending.indexOf(op), 1);
+        op.reject(Object.assign(new Error('SYNTHETIC_PERMISSION_DENIED'), { code: 'PERMISSION_DENIED' }));
+    }
+}
+
+test('initial loading blocks writes even if the connection is ready', async () => {
+    const w = new World(), c = w.client('A', { load: false });
+    c.fill('2027-02-01', '2027-02-03');
+    await c.submit();
+    assert.equal(c.transactions.length, 0);
+    assert.equal(c.get('bookingFields').disabled, true);
+    assert.equal(c.get('syncBanner').dataset.kind, 'loading');
+    assert.equal(await c.export(), null);
+});
+
+test('read error blocks all writes and never initializes defaults', async () => {
+    const w = new World(), c = w.client('A', { load: false });
+    c.failRead(); c.fill('2027-02-01', '2027-02-03'); await c.submit();
+    assert.equal(c.transactions.length, 0);
+    assert.equal(c.get('syncBanner').dataset.kind, 'error');
+    assert.deepEqual(w.data, { bookings: [] });
+});
+
+test('offline editing is blocked while the last loaded copy remains exportable', async () => {
+    const record = booking('old', '2026-01-01', '2026-01-03');
+    const w = new World({ bookings: [record], custom: { retained: true } }), c = w.client('A');
+    c.connect(false); c.fill('2027-02-01', '2027-02-03'); await c.submit();
+    assert.equal(c.transactions.length, 0);
+    assert.equal(c.get('syncBanner').dataset.kind, 'offline');
+    const copy = await c.export();
+    assert.deepEqual(copy.bookings, [record]); assert.equal(copy.custom.retained, true);
+    assert.equal(copy._scaleaExport.connected, false);
+});
+
+test('two concurrent nonoverlapping app submissions survive transaction retries', async () => {
+    const w = new World(), a = w.client('A'), b = w.client('B');
+    a.fill('2027-02-01', '2027-02-03'); b.fill('2027-03-01', '2027-03-03');
+    const pa = a.submit(), pb = b.submit();
+    assert.equal(w.pending.length, 2); assert.equal(w.data.bookings.length, 0);
+    w.commit(a); w.commit(b); await Promise.all([pa, pb]);
+    assert.equal(w.data.bookings.length, 2);
+    assert.equal((await a.export()).bookings.length, 2);
+    assert.equal((await b.export()).bookings.length, 2);
+    assert.equal(a.get('checkIn').value, ''); assert.equal(b.get('checkIn').value, '');
+});
+
+test('concurrent overlapping submissions reject the second without clearing its form', async () => {
+    const w = new World(), a = w.client('A'), b = w.client('B');
+    a.fill('2027-02-01', '2027-02-05'); b.fill('2027-02-03', '2027-02-06');
+    const pa = a.submit(), pb = b.submit();
+    w.commit(a); w.commit(b); await Promise.all([pa, pb]);
+    assert.equal(w.data.bookings.length, 1);
+    assert.equal(b.get('checkIn').value, '2027-02-03');
+    assert.match(b.get('actionError').textContent, /даты уже заняты/);
+});
+
+test('a concurrent addition and deletion modify only their intended records', async () => {
+    const old = booking('old', '2026-01-01', '2026-01-03', { price: 63.25, status: 'synthetic-confirmed' });
+    const keep = booking('keep', '2026-02-01', '2026-02-03');
+    const w = new World({ bookings: [old, keep], prices: [50], ownerMetadata: { unchanged: true } });
+    const a = w.client('A'), b = w.client('B');
+    a.fill('2027-03-01', '2027-03-03'); const pa = a.submit(), pb = b.remove('old');
+    w.commit(a); w.commit(b); await Promise.all([pa, pb]);
+    assert.equal(w.data.bookings.length, 2);
+    assert.ok(w.data.bookings.find(item => item.id === 'keep'));
+    assert.ok(w.data.bookings.find(item => item.id === 'synthetic-A-1'));
+    assert.deepEqual(w.data.prices, [50]); assert.deepEqual(w.data.ownerMetadata, { unchanged: true });
+    assert.equal(w.data.deletedBookingIds.old, true);
+});
+
+test('import concurrent with add merges new records and preserves existing prices', async () => {
+    const w = new World({ bookings: [], prices: [50] }), a = w.client('A'), b = w.client('B');
+    a.fill('2027-03-01', '2027-03-03');
+    const pa = a.submit(), pb = b.import({ bookings: [booking('imported', '2027-04-01', '2027-04-03')], prices: [999] });
+    await flush();
+    assert.equal(w.pending.length, 2);
+    w.commit(a); w.commit(b); await Promise.all([pa, pb]);
+    assert.equal(w.data.bookings.length, 2); assert.deepEqual(w.data.prices, [50]);
+});
+
+test('an import conflicting with a concurrent add is rejected atomically', async () => {
+    const w = new World(), a = w.client('A'), b = w.client('B');
+    a.fill('2027-03-01', '2027-03-04');
+    const pa = a.submit(), pb = b.import({ bookings: [booking('free', '2027-04-01', '2027-04-03'), booking('conflict', '2027-03-02', '2027-03-05')] });
+    await flush(); w.commit(a); w.commit(b); await Promise.all([pa, pb]);
+    assert.equal(w.data.bookings.length, 1);
+    assert.ok(!w.data.bookings.find(item => item.id === 'free'));
+    assert.match(b.get('actionError').textContent, /даты уже заняты/);
+});
+
+test('failed save preserves all form fields and displays an error', async () => {
+    const w = new World(), c = w.client('A');
+    c.fill('2027-02-01', '2027-02-03', 65.25, 'SYNTHETIC RETAIN');
+    c.get('guestPhone').value = 'synthetic-phone'; c.get('guestNotes').value = 'synthetic notes';
+    const resetCount = c.get('bookingForm').resetCount;
+    const pending = c.submit();
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    assert.doesNotMatch(c.get('cloudStatus').className, /emerald/);
+    w.reject(c); await pending;
+    assert.equal(c.get('bookingForm').resetCount, resetCount);
+    assert.equal(c.get('guestName').value, 'SYNTHETIC RETAIN');
+    assert.equal(c.get('guestPhone').value, 'synthetic-phone');
+    assert.equal(c.get('guestNotes').value, 'synthetic notes');
+    assert.equal(c.get('price').value, '65.25');
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    assert.match(c.get('actionError').textContent, /не разрешил/);
+    assert.equal(c.get('syncBanner').dataset.kind, 'error');
+    assert.match(c.get('cloudStatus').className, /bg-rose-500/);
+    assert.doesNotMatch(c.get('cloudStatus').className, /emerald/);
+    assert.equal(c.get('bookingFields').disabled, false, 'A rejected save may be retried without losing the draft');
+    assert.equal(w.data.bookings.length, 0);
+    const retry = c.submit();
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    w.commit(c); await retry;
+    assert.equal(w.data.bookings.length, 1);
+    assert.equal(w.data.bookings[0].guest, 'SYNTHETIC RETAIN');
+    assert.equal(c.get('syncBanner').dataset.kind, 'ready');
+    assert.match(c.get('cloudStatus').className, /bg-emerald-400/);
+    assert.equal(c.get('actionError').classList.contains('hidden'), true);
+    assert.equal(c.get('checkIn').value, '');
+});
+
+test('server value events alone do not turn an unacknowledged save green', async () => {
+    const w = new World(), c = w.client('A');
+    c.fill('2027-02-01', '2027-02-03'); const pending = c.submit();
+    w.commit(c, { holdAck: true }); await flush();
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    assert.doesNotMatch(c.get('cloudStatus').className, /emerald/);
+    assert.equal(c.get('checkIn').value, '2027-02-01');
+    assert.equal(c.beforeUnload().prevented, true);
+    w.acknowledge(); await pending;
+    assert.equal(c.get('syncBanner').dataset.kind, 'ready');
+    assert.match(c.get('cloudStatus').className, /emerald/);
+    assert.equal(c.get('checkIn').value, '');
+    assert.equal(c.beforeUnload().prevented, false);
+});
+
+test('loss of connectivity mid-save keeps the save pending and blocks logout', async () => {
+    const w = new World(), c = w.client('A');
+    c.fill('2027-02-01', '2027-02-03'); const pending = c.submit();
+    c.connect(false); c.context.logout(); await flush();
+    assert.equal(c.signOutCalls, 0);
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    assert.match(c.get('syncBanner').textContent, /Связь прервалась/);
+    assert.equal(c.get('checkIn').value, '2027-02-01');
+    c.connect(true); w.commit(c); await pending;
+    assert.equal(w.data.bookings.length, 1); assert.equal(c.get('checkIn').value, '');
+});
+
+test('late acknowledgments cannot overwrite a fresher listener snapshot', async () => {
+    const w = new World(), a = w.client('A'), b = w.client('B');
+    a.fill('2027-02-01', '2027-02-03'); const pa = a.submit();
+    w.commit(a, { holdAck: true });
+    b.fill('2027-03-01', '2027-03-03'); const pb = b.submit();
+    w.commit(b); await pb;
+    assert.equal((await b.export()).bookings.length, 2);
+    w.acknowledge(); await pa;
+    assert.equal((await a.export()).bookings.length, 2);
+});
+
+test('logout detaches listeners and a previous session callback cannot restore its data', async () => {
+    const w = new World({ bookings: [booking('old', '2026-01-01', '2026-01-03')] }), c = w.client('A');
+    const staleCallback = c.subscriptions.data[0].callback;
+    c.context.logout(); await flush();
+    assert.equal(c.signOutCalls, 1); assert.equal(c.subscriptions.data.length, 0);
+    assert.equal(c.get('appContainer').classList.contains('hidden'), true);
+    staleCallback(snapshot(w.data));
+    assert.equal(await c.export(), null);
+    c.authenticate({ uid: 'synthetic-other-user' }); c.connect(true);
+    assert.equal(c.get('bookingFields').disabled, true);
+    c.receive({ bookings: [] });
+    assert.equal((await c.export()).bookings.length, 0);
+});
+
+test('an external auth transition during save cannot reset the next session draft', async () => {
+    const w = new World(), c = w.client('A');
+    c.fill('2027-02-01', '2027-02-03'); const pending = c.submit();
+    c.authenticate({ uid: 'synthetic-new-session' }); c.connect(true); c.receive(w.data);
+    c.fill('2027-05-01', '2027-05-03', 70, 'NEW SESSION DRAFT');
+    w.commit(c); await pending;
+    assert.equal(c.get('guestName').value, 'NEW SESSION DRAFT');
+    assert.equal(c.get('checkIn').value, '2027-05-01');
+});
+
+test('date input listeners quote exact cross-month totals in the actual form', async () => {
+    const w = new World(), c = w.client('A');
+    c.get('checkIn').value = '2027-06-30'; c.get('checkOut').value = '2027-07-03';
+    c.get('checkIn').dispatch('change');
+    assert.equal(c.get('price').value, 101.67);
+    assert.equal(c.get('liveTotal').textContent, '305 €');
+    const pending = c.submit(); w.commit(c); await pending;
+    assert.equal(w.data.bookings[0].totalCents, 30500);
+    assert.equal(w.data.bookings[0].nightlyRates[0].cents, 8500);
+    assert.equal(w.data.bookings[0].nightlyRates[1].cents, 11000);
+});
+
+test('manual price input invalidates the automatic quote', async () => {
+    const w = new World(), c = w.client('A');
+    c.get('checkIn').value = '2027-06-30'; c.get('checkOut').value = '2027-07-03'; c.get('checkIn').dispatch('change');
+    c.get('price').value = '99.99'; c.get('price').dispatch('input');
+    assert.equal(c.get('liveTotal').textContent, '299,97 €');
+    const pending = c.submit(); w.commit(c); await pending;
+    assert.equal(w.data.bookings[0].totalCents, 29997);
+    assert.ok(w.data.bookings[0].nightlyRates.every(rate => rate.cents === 9999));
+});
+
+test('an unpriced year cannot accidentally reuse the 2027 table', () => {
+    const w = new World(), c = w.client('A');
+    c.get('checkIn').value = '2027-12-31'; c.get('checkOut').value = '2028-01-03'; c.get('checkIn').dispatch('change');
+    assert.equal(c.get('price').value, '0');
+    assert.match(c.get('quoteHint').textContent, /только для ночей 2027/);
+    assert.equal(c.get('liveTotal').textContent, '0 €');
+});
