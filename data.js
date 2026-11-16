@@ -109,11 +109,11 @@
 
     function equal(a, b) { return canonical(a) === canonical(b); }
 
-    function euroCents(value, code, label) {
-        if (typeof value !== 'string' || !/^\d+(?:[.,]\d{1,2})?$/.test(value.trim())) fail(code, `${label}: укажите положительную сумму не более чем с двумя знаками после запятой.`);
+    function euroCents(value, code, label, { allowZero = false } = {}) {
+        if (typeof value !== 'string' || !/^\d+(?:[.,]\d{1,2})?$/.test(value.trim())) fail(code, `${label}: укажите ${allowZero ? 'неотрицательную' : 'положительную'} сумму не более чем с двумя знаками после запятой.`);
         const [whole, fraction = ''] = value.trim().replace(',', '.').split('.');
         const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
-        if (cents <= 0n || cents > BigInt(Number.MAX_SAFE_INTEGER)) fail(code, `${label}: неверная сумма.`);
+        if ((!allowZero && cents === 0n) || cents > BigInt(Number.MAX_SAFE_INTEGER)) fail(code, `${label}: неверная сумма.`);
         return Number(cents);
     }
 
@@ -190,7 +190,7 @@
         const nights = getNights(booking.checkIn, booking.checkOut);
         const previousTotal = getBookingTotalCents(original);
         const explicitTotal = input.total !== undefined && input.total !== '' && !(typeof input.total === 'string' && input.total.trim() === '');
-        const totalCents = explicitTotal ? euroCents(input.total, 'INVALID_TOTAL', 'Стоимость проживания') : previousTotal;
+        const totalCents = explicitTotal ? euroCents(input.total, 'INVALID_TOTAL', 'Стоимость проживания', { allowZero: true }) : previousTotal;
         let quote = null;
         if (explicitTotal && isObject(input.quote)) {
             try {
@@ -200,7 +200,7 @@
                 if (!(error instanceof DataError) || error.code !== 'UNSUPPORTED_YEAR') throw error;
             }
         }
-        if (quote || totalCents !== previousTotal || booking.checkIn !== original.checkIn || booking.checkOut !== original.checkOut) {
+        if (quote || totalCents !== previousTotal || (explicitTotal && totalCents === 0) || booking.checkIn !== original.checkIn || booking.checkOut !== original.checkOut) {
             booking.totalCents = totalCents;
             booking.price = Math.round(totalCents / nights) / 100;
             const base = Math.floor(totalCents / nights), extra = totalCents % nights;
@@ -220,9 +220,9 @@
         if (!isObject(booking)) fail('INVALID_BOOKING', 'В списке найдено повреждённое бронирование.');
         validateId(booking.id);
         const nights = getNights(booking.checkIn, booking.checkOut);
-        // A tiny explicit total can round its displayed average to zero, while
-        // still preserving a positive exact total and valid per-night cents.
-        if (!(booking.price === 0 && isCents(booking.totalCents) && booking.totalCents > 0 && Array.isArray(booking.nightlyRates))) readPrice(booking.price);
+        // Complimentary stays and tiny explicit totals can have a zero displayed
+        // average, backed by an exact total and a validated nightly breakdown.
+        if (!(booking.price === 0 && isCents(booking.totalCents) && Array.isArray(booking.nightlyRates))) readPrice(booking.price);
         validateOptionalDetails(booking);
         if (hasOwn(booking, 'totalCents') && !isCents(booking.totalCents)) fail('INVALID_BOOKING', 'У бронирования неверная итоговая сумма.');
         if (hasOwn(booking, 'nightlyRates')) {
@@ -263,6 +263,9 @@
         }
         const hasAmount = hasOwn(payment, 'amountCents');
         const hasDate = hasOwn(payment, 'receivedOn');
+        if (booking.totalCents === 0 && payment.status === 'received' && !hasAmount) {
+            fail('INVALID_ADVANCE_PAYMENT', 'Нельзя указать бесплатное проживание при неизвестной сумме уже полученной предоплаты.');
+        }
         if (payment.status !== 'received' && (hasAmount || hasDate)) {
             fail('INVALID_ADVANCE_PAYMENT', 'Сумму и дату можно указать только для полученной предоплаты.');
         }
@@ -353,7 +356,8 @@
         if (!Number.isSafeInteger(recordedCents)) fail('INVALID_PAYMENT', 'Общая сумма оплат слишком велика.');
         const totalCents = getBookingTotalCents(booking);
         if (recordedCents > totalCents) fail('PAYMENT_EXCEEDS_TOTAL', 'Полученные оплаты превышают согласованную стоимость проживания.');
-        const known = advance.status === 'not_received' || (advance.status === 'received' && advance.amountCents !== null);
+        const complimentary = booking.totalCents === 0 && recordedCents === 0 && advance.status !== 'received';
+        const known = complimentary || advance.status === 'not_received' || (advance.status === 'received' && advance.amountCents !== null);
         const remainingCents = known ? totalCents - recordedCents : null;
         return { known, receivedCents: known ? recordedCents : null, remainingCents, recordedCents, fullyPaid: known && remainingCents === 0, entries };
     }

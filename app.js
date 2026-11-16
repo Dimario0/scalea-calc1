@@ -14,11 +14,11 @@
         INVALID_DATE: 'Проверьте дату: нужен настоящий день календаря.',
         INVALID_DATES: 'Дата выезда должна быть позже даты заезда.',
         INVALID_PRICE: 'Укажите положительную цену за ночь, не более двух знаков после запятой.',
-        INVALID_ADVANCE_PAYMENT: 'Проверьте залог: сумма должна быть положительной, до двух знаков после запятой, а дата — настоящим днём календаря.',
+        INVALID_ADVANCE_PAYMENT: 'Проверьте залог: сумму и дату получения. Если залог уже получен, уточните его сумму перед сохранением бесплатного проживания.',
         ADVANCE_EXCEEDS_TOTAL: 'Залог не может превышать согласованную стоимость проживания.',
         BOOKING_NOT_FOUND: 'Этой брони уже нет в календаре. Возможно, её удалили с другого телефона.',
         INVALID_BOOKING_DETAILS: 'Проверьте число гостей (от 1 до 4), время и сведения для подготовки квартиры.',
-        INVALID_TOTAL: 'Укажите положительную стоимость проживания, до двух знаков после запятой.',
+        INVALID_TOTAL: 'Укажите стоимость проживания от 0 €, до двух знаков после запятой.',
         INVALID_PAYMENT: 'Проверьте сумму и дату поступления. Сумма должна быть положительной, до двух знаков после запятой.',
         PAYMENT_BASE_UNKNOWN: 'Сначала уточните залог: получен ли он и в какой сумме. Тогда можно рассчитать доплату.',
         PAYMENT_EXCEEDS_TOTAL: 'Полученные оплаты не могут превышать согласованную стоимость проживания.',
@@ -220,14 +220,16 @@
         }
         $(ids.summary).textContent = summary;
     }
+    const isComplimentaryStay = booking => booking.totalCents === 0;
     function advanceLabel(booking) {
+        if (isComplimentaryStay(booking)) return 'Залог не требуется';
         const payment = D.getAdvancePayment(booking);
         if (payment.status === 'unknown') return 'Залог: не отмечено';
         if (payment.status === 'not_received') return 'Залог не получен';
         return '✓ Залог получен' + (payment.amountCents === null ? '' : ' · ' + D.formatMoney(payment.amountCents));
     }
     function advanceClasses(booking) {
-        const status = D.getAdvancePayment(booking).status;
+        const status = isComplimentaryStay(booking) ? 'unknown' : D.getAdvancePayment(booking).status;
         return 'font-bold rounded-xl p-3 mb-3 ' + (status === 'received' ? 'text-emerald-800 bg-emerald-50' : status === 'not_received' ? 'text-amber-900 bg-amber-50' : 'text-slate-600 bg-slate-50');
     }
     function updateDatesFromTariffs() {
@@ -352,6 +354,7 @@
     const cleaningLabels = { unknown: 'Не отмечено', needed: 'Нужна', scheduled: 'Назначена', ready: 'Готово' };
     const dateLabel = value => value ? value.split('-').reverse().join('.') : 'Не указано';
     function paymentLabel(booking) {
+        if (isComplimentaryStay(booking)) return 'Без оплаты';
         const summary = D.getPaymentSummary(booking);
         return !summary.known ? 'Оплата не отмечена' : summary.fullyPaid ? 'Оплачено полностью' : 'Доплата ' + D.formatMoney(summary.remainingCents);
     }
@@ -365,8 +368,8 @@
             if (query && !searchable.includes(query) && !(digits.length >= 3 && String(booking.phone || '').replace(/\D/g, '').includes(digits))) return false;
             if (source !== 'all' && (booking.inquirySource || 'unknown') !== source) return false;
             return filter === 'all' || (filter === 'upcoming' && booking.checkOut >= D.todayStr()) ||
-                (filter === 'deposit' && advance.status === 'not_received') || (filter === 'balance' && summary.known && summary.remainingCents > 0) ||
-                (filter === 'paid' && summary.fullyPaid) || (filter === 'unknown' && !summary.known);
+                (filter === 'deposit' && !isComplimentaryStay(booking) && advance.status === 'not_received') || (filter === 'balance' && summary.known && summary.remainingCents > 0) ||
+                (filter === 'paid' && !isComplimentaryStay(booking) && summary.fullyPaid) || (filter === 'unknown' && !summary.known);
         });
         rows.sort((a, b) => {
             let result = 0;
@@ -387,7 +390,7 @@
                 <span class="ss-row"><strong>${escapeHtml(booking.guest || 'Гость')}</strong><span class="ss-amount">${D.formatMoney(D.getBookingTotalCents(booking))}</span></span>
                 <span class="ss-muted">${dateLabel(booking.checkIn)} → ${dateLabel(booking.checkOut)} · ${D.getNights(booking.checkIn, booking.checkOut)} ночей</span>
                 <span class="ss-row"><span class="ss-pill ${summary.fullyPaid ? 'ss-good' : summary.known ? 'ss-warn' : ''}">${paymentLabel(booking)}</span><span class="ss-muted">${escapeHtml(sourceLabels[booking.inquirySource] || sourceLabels.unknown)}</span></span>
-                <span class="ss-row"><span class="${advance.status === 'received' ? 'ss-good' : advance.status === 'not_received' ? 'ss-warn' : 'ss-muted'}">${advanceLabel(booking)}</span>${booking.guestCount ? `<span class="ss-muted">Гостей: ${booking.guestCount}</span>` : ''}</span>
+                <span class="ss-row"><span class="${isComplimentaryStay(booking) ? 'ss-muted' : advance.status === 'received' ? 'ss-good' : advance.status === 'not_received' ? 'ss-warn' : 'ss-muted'}">${advanceLabel(booking)}</span>${booking.guestCount ? `<span class="ss-muted">Гостей: ${booking.guestCount}</span>` : ''}</span>
                 <span class="ss-muted">${summary.known ? `Получено ${D.formatMoney(summary.receivedCents)}` : summary.recordedCents ? `Отмечено поступлений ${D.formatMoney(summary.recordedCents)} · остаток неизвестен` : 'Сведения об оплате ещё не внесены'}</span>
             </button>`;
         }).join('') : '<div class="ss-empty">Брони не найдены. Измените поиск или фильтры.</div>';
@@ -427,7 +430,7 @@
                 bar.onclick = event => { event.stopPropagation(); openDeleteModal(booking.id); };
                 const payment = D.getAdvancePayment(booking);
                 bar.title = `${booking.guest || 'Гость'} · ${advanceLabel(booking)}`;
-                const marker = payment.status === 'received' ? '✓' : payment.status === 'not_received' ? '⏳' : '';
+                const marker = isComplimentaryStay(booking) ? '' : payment.status === 'received' ? '✓' : payment.status === 'not_received' ? '⏳' : '';
                 const lastNight = D.addDays(booking.checkOut, -1), label = `${marker ? `<span class="shrink-0 pl-1" aria-label="${advanceLabel(booking)}">${marker}</span>` : ''}<span class="truncate px-1">${escapeHtml(booking.guest || 'Гость')}${booking.notes ? ' 📝' : ''} (${D.formatMoney(D.getBookingTotalCents(booking))})</span>`;
                 if (date === booking.checkOut) { bar.classList.add('booking-checkout'); bar.textContent = '← Выезд'; }
                 else if (date === booking.checkIn) { bar.classList.add('booking-start'); if (lastNight === date) bar.style.borderRadius = '6px'; bar.innerHTML = label; }
@@ -513,7 +516,7 @@
             <div class="ss-pill ${summary.fullyPaid ? 'ss-good' : summary.known ? 'ss-warn' : ''}">${paymentLabel(booking)}</div>`;
         const depositRow = advance.status === 'received' ? `<div class="ss-row payment-entry"><span>Залог${advance.receivedOn ? `<span class="ss-muted"> · ${dateLabel(advance.receivedOn)}</span>` : ''}</span><strong>${advance.amountCents === null ? 'Сумма не указана' : D.formatMoney(advance.amountCents)}</strong></div>` : '';
         $('paymentList').innerHTML = depositRow + summary.entries.map(payment => `<div class="payment-entry"><div class="ss-row"><span>${payment.receivedOn ? dateLabel(payment.receivedOn) : 'Дата не указана'}</span><strong>${D.formatMoney(payment.amountCents)}</strong></div>${payment.note ? `<div class="ss-muted">${escapeHtml(payment.note)}</div>` : ''}<button type="button" data-write data-remove-payment="${escapeHtml(payment.id)}" class="ss-button payment-remove">Удалить запись платежа</button></div>`).join('') || '<p class="ss-muted">Поступления ещё не отмечены.</p>';
-        $('paymentBaseHint').textContent = !summary.known ? 'Уточните статус и сумму залога, чтобы добавить остальные оплаты и рассчитать остаток.' : summary.fullyPaid ? 'Проживание оплачено полностью.' : 'Внесите полученную доплату. Залог уже учтён в общей сумме.';
+        $('paymentBaseHint').textContent = isComplimentaryStay(booking) ? 'Бесплатное проживание: оплата и залог не требуются.' : !summary.known ? 'Уточните статус и сумму залога, чтобы добавить остальные оплаты и рассчитать остаток.' : summary.fullyPaid ? 'Проживание оплачено полностью.' : 'Внесите полученную доплату. Залог уже учтён в общей сумме.';
         $('paymentForm').classList.toggle('hidden', !summary.known || summary.fullyPaid);
     }
     window.openDeleteModal = id => {
