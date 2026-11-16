@@ -1,15 +1,28 @@
 /* Isolated browser demo. It never loads or calls Firebase. */
 window.createScaleaPreviewStore = (D, handlers) => {
     'use strict';
-    const key = 'scaleastay-calc-preview-v2';
+    const key = 'scaleastay-calc-preview-v3-mobile';
     let connected = true;
     let cache = null;
-    const seed = () => ({
-        bookings: [
-            D.buildBooking({ id: 'demo-january', guest: 'Пример брони', phone: '', notes: 'Демонстрационная запись — только для просмотра.', checkIn: '2027-01-07', checkOut: '2027-01-11', price: 60, quote: D.quoteStay('2027-01-07', '2027-01-11'), createdAt: '2026-11-16T00:00:00Z' }),
-            D.buildBooking({ id: 'demo-summer', guest: 'Летний пример', phone: '', notes: 'Две ночи июля и две ночи августа по разным тарифам.', checkIn: '2027-07-30', checkOut: '2027-08-03', price: 125, quote: D.quoteStay('2027-07-30', '2027-08-03'), createdAt: '2026-11-16T00:00:00Z' })
-        ], prices: [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50]
-    });
+    function seed() {
+        const example = (id, guest, checkIn, checkOut, extra) => {
+            const quote = D.quoteStay(checkIn, checkOut);
+            return D.buildBooking({ id, guest, phone: '', notes: 'Вымышленная запись для проверки калькулятора.', checkIn, checkOut, price: quote.averagePrice, quote, createdAt: '2026-11-16T00:00:00Z', ...extra });
+        };
+        const anna = example('demo-anna', 'Анна · пример', '2027-06-28', '2027-07-03', { guestCount: 2, inquirySource: 'referral', arrivalTime: '14:00', departureTime: '10:00', cleaningStatus: 'needed', advancePayment: { status: 'received', amountCents: 15000, receivedOn: '2026-11-10' } });
+        anna.paymentEntries = { 'demo-partial': D.buildPayment({ id: 'demo-partial', amount: '100', receivedOn: '2026-11-15', note: 'Часть доплаты — пример' }, anna) };
+        const boris = example('demo-boris', 'Борис · пример', '2027-07-10', '2027-07-15', { guestCount: 4, inquirySource: 'website', arrivalTime: '17:00', departureTime: '11:00', cleaningStatus: 'ready', advancePayment: { status: 'received', amountCents: 20000, receivedOn: '2026-11-01' } });
+        boris.paymentEntries = { 'demo-final': D.buildPayment({ id: 'demo-final', amount: '350', receivedOn: '2026-11-12', note: 'Окончательная оплата — пример' }, boris) };
+        return {
+            bookings: [
+                example('demo-elena', 'Елена · пример', '2027-06-05', '2027-06-10', { guestCount: 2, inquirySource: 'website', arrivalTime: '16:30', departureTime: '10:30', cleaningStatus: 'scheduled', advancePayment: { status: 'not_received' } }),
+                anna,
+                boris,
+                example('demo-victor', 'Виктор · пример', '2027-08-06', '2027-08-11', { guestCount: 3, inquirySource: 'social', cleaningStatus: 'unknown', advancePayment: { status: 'not_received' } }),
+                example('demo-legacy', 'Старая запись · пример', '2027-09-05', '2027-09-09', { inquirySource: 'repeat', notes: 'Оплата и число гостей не отмечены. Пустые сведения не считаются долгом.' })
+            ], prices: [50, 50, 50, 55, 60, 65, 75, 120, 65, 60, 50, 50]
+        };
+    }
     function read() { return JSON.parse(localStorage.getItem(key) || 'null') || seed(); }
     function emit() { if (connected) { cache = read(); handlers.data(cache); } }
     async function withLock(callback) {

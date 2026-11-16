@@ -20,13 +20,25 @@ Editing is disabled before successful loading, after a read failure, while savin
 
 Imports validate the entire file and merge bookings by ID. Conflicting IDs or dates abort the import; identical records are skipped. Imports never replace the database or tariff settings. Deletion markers prevent a previous export from silently resurrecting deleted records. Exports retain all root and booking fields, plus export metadata, and identify whether the current view was connected.
 
-## Advance payment (guest-facing label: «Залог»)
+## Mobile booking workflow
+
+Four screens share the same navigation on phones and desktop: calendar, bookings, add, and more. The booking list searches guest names and phone numbers; filters upcoming stays, missing advances, outstanding balances, fully paid stays, unknown payments and inquiry source; and sorts by arrival, outstanding amount, total or guest. Unknown balances sort after known amounts and never count as debt. The calendar shows the next arrival, departure and preparation task. Form controls and layout support 320px and 390px phone widths without wide tables.
+
+Optional booking details include one to four guests, arrival/departure times, cleaning status, notes and inquiry source (website, social, referral or repeat). Missing historical fields stay missing until the owner explicitly saves an edit. No default arrival time, fee, advance percentage or payment deadline is introduced.
+
+The existing booking card opens a reusable editing form. Date edits retain the agreed total. A separate button explicitly applies the 2027 tariff schedule, or the owner can enter an agreed total. Manual totals are allocated over the stay nights in exact cents for monthly statistics. An edit changes the latest record only when its expected nonfinancial details still match; current advance and payment entries are preserved independently. Date overlaps and accepted money are rechecked on every transaction retry.
+
+## Payments (advance label: «Залог»)
 
 The owner confirmed that this payment counts toward the agreed accommodation total. Each booking can record `advancePayment` with status `unknown`, `not_received`, or `received`, an optional exact amount in cents, and an optional receipt date. No amount, percentage or deadline is imposed. A received payment may have an unknown amount; its remaining balance then stays unknown. Missing metadata in historical records is shown as «Не отмечено», never as an unpaid debt. Loading a historical record does not create metadata or write to the server.
 
 New bookings can include the advance. Existing booking cards allow updating only this field, keeping the original dates, price, total, nightly quote and all other metadata. A transaction compares the field seen when opening the card with the current server field; differing edits from two stale phones require reopening the card. Identical retried updates are harmless. The editor keeps entered values after a rejected write and displays confirmation only after acknowledgment.
 
-«Остаток после залога» subtracts the known advance once from the accommodation total. This feature does not track later final payments or refunds. Monthly/yearly totals remain the booked accommodation value allocated by stay nights; they are not cash received or profit.
+Later payments are separate entries with a stable ID, exact amount, optional receipt date and note. The advance is counted once, together with these entries. The card shows received total, remaining amount and full-payment status. If the advance status or received amount is unknown, the owner must clarify it before adding later payments; missing information is never assumed to be zero. Received payments cannot exceed the agreed accommodation total. Refunds and expenses are not tracked.
+
+Adding entries merges independent IDs against the latest server record. An unchanged failed form reuses the same payment ID on retry, preventing duplicate receipts. Removing an erroneous payment affects only that entry and leaves a tombstone, so a delayed retry cannot restore it. Live updates refresh the read-only card and ledger while retaining an entered advance or payment draft. Fields clear only after acknowledgment.
+
+Monthly/yearly booking totals remain the booked accommodation value allocated by stay nights; they are not cash received or profit. Payment statistics cover bookings whose arrival is in the selected month. Known recorded receipts and known remaining balances are shown separately, with a count of bookings whose payment is unknown. Unknown remaining amounts are excluded rather than invented.
 
 ## Check and preview
 
@@ -37,7 +49,7 @@ node --test tests/*.test.cjs
 python3 tools/preview_server.py
 ```
 
-Open `http://127.0.0.1:8765/preview.html`. The preview uses synthetic records, localStorage and Web Locks. Two windows of the same browser share this demo calendar. The preview entry has no Firebase SDK or Firebase configuration; the preview server blocks network connections and does not serve the production entry. Demonstration storage is separate from the production database.
+Open `http://127.0.0.1:8765/preview.html` on the computer running the preview server. The preview uses five synthetic 2027 records, a separate versioned localStorage key and Web Locks. Two windows of the same browser share this demo calendar. The preview entry has no Firebase SDK or Firebase configuration; the preview server blocks network connections and does not serve the production entry. Demonstration storage is separate from the production database.
 
 The automated tests execute the real application and data helpers against an isolated Firebase transaction model, including retries, rejected writes, connectivity changes and two clients. They do not exercise the real Firebase SDK, deployed security rules or phones.
 

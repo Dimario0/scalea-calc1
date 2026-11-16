@@ -9,6 +9,9 @@
     const DAY_MS = 86400000;
     const DIRECT_RATES_2027 = Object.freeze([60, 60, 60, 60, 70, 85, 110, 140, 95, 65, 60, 60]);
     const monthNames = Object.freeze(['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']);
+    const cleaningStatuses = ['unknown', 'needed', 'scheduled', 'ready'];
+    const inquirySources = ['unknown', 'website', 'social', 'referral', 'repeat'];
+    const financialFields = ['advancePayment', 'paymentEntries', 'deletedPaymentIds'];
 
     class DataError extends Error {
         constructor(code, message) {
@@ -106,6 +109,31 @@
 
     function equal(a, b) { return canonical(a) === canonical(b); }
 
+    function euroCents(value, code, label) {
+        if (typeof value !== 'string' || !/^\d+(?:[.,]\d{1,2})?$/.test(value.trim())) fail(code, `${label}: укажите положительную сумму не более чем с двумя знаками после запятой.`);
+        const [whole, fraction = ''] = value.trim().replace(',', '.').split('.');
+        const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+        if (cents <= 0n || cents > BigInt(Number.MAX_SAFE_INTEGER)) fail(code, `${label}: неверная сумма.`);
+        return Number(cents);
+    }
+
+    function applyOptionalDetails(input, booking) {
+        for (const key of ['guestCount', 'arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource']) {
+            if (!hasOwn(input, key) || input[key] === undefined) continue;
+            if (input[key] === '' || input[key] === null) { delete booking[key]; continue; }
+            booking[key] = key === 'guestCount' && typeof input[key] === 'string' ? Number(input[key]) : input[key];
+        }
+    }
+
+    function validateOptionalDetails(booking) {
+        if (hasOwn(booking, 'guestCount') && (!Number.isInteger(booking.guestCount) || booking.guestCount < 1 || booking.guestCount > 4)) fail('INVALID_BOOKING_DETAILS', 'Количество гостей должно быть от одного до четырёх.');
+        for (const key of ['arrivalTime', 'departureTime']) {
+            if (hasOwn(booking, key) && (typeof booking[key] !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(booking[key]))) fail('INVALID_BOOKING_DETAILS', 'Время нужно указать в формате ЧЧ:ММ.');
+        }
+        if (hasOwn(booking, 'cleaningStatus') && !cleaningStatuses.includes(booking.cleaningStatus)) fail('INVALID_BOOKING_DETAILS', 'Неизвестный статус уборки.');
+        if (hasOwn(booking, 'inquirySource') && !inquirySources.includes(booking.inquirySource)) fail('INVALID_BOOKING_DETAILS', 'Неизвестный источник обращения.');
+    }
+
     function buildBooking(input) {
         if (!isObject(input)) fail('INVALID_BOOKING', 'Неверные данные бронирования.');
         const nights = getNights(input.checkIn, input.checkOut);
@@ -141,6 +169,43 @@
             createdAt: input.createdAt === undefined ? new Date().toISOString() : input.createdAt
         };
         if (input.advancePayment !== undefined) booking.advancePayment = copy(input.advancePayment);
+        applyOptionalDetails(input, booking);
+        validateBooking(booking);
+        return booking;
+    }
+
+    function buildBookingEdit(input, original) {
+        if (!isObject(input) || !isObject(original)) fail('INVALID_BOOKING', 'Неверные данные редактирования бронирования.');
+        validateBooking(original);
+        const booking = copy(original);
+        for (const key of ['guest', 'phone', 'notes']) {
+            if (!hasOwn(input, key) || input[key] === undefined) continue;
+            if (typeof input[key] !== 'string') fail('INVALID_BOOKING_DETAILS', 'Имя, телефон и заметки должны быть текстом.');
+            booking[key] = input[key];
+        }
+        applyOptionalDetails(input, booking);
+        for (const key of ['checkIn', 'checkOut']) {
+            if (hasOwn(input, key) && input[key] !== undefined) booking[key] = input[key];
+        }
+        const nights = getNights(booking.checkIn, booking.checkOut);
+        const previousTotal = getBookingTotalCents(original);
+        const explicitTotal = input.total !== undefined && input.total !== '' && !(typeof input.total === 'string' && input.total.trim() === '');
+        const totalCents = explicitTotal ? euroCents(input.total, 'INVALID_TOTAL', 'Стоимость проживания') : previousTotal;
+        let quote = null;
+        if (explicitTotal && isObject(input.quote)) {
+            try {
+                const expected = quoteStay(booking.checkIn, booking.checkOut);
+                if (totalCents === expected.totalCents && equal(input.quote, expected)) quote = expected;
+            } catch (error) {
+                if (!(error instanceof DataError) || error.code !== 'UNSUPPORTED_YEAR') throw error;
+            }
+        }
+        if (quote || totalCents !== previousTotal || booking.checkIn !== original.checkIn || booking.checkOut !== original.checkOut) {
+            booking.totalCents = totalCents;
+            booking.price = Math.round(totalCents / nights) / 100;
+            const base = Math.floor(totalCents / nights), extra = totalCents % nights;
+            booking.nightlyRates = quote ? copy(quote.nightlyRates) : Array.from({ length: nights }, (_, index) => ({ date: addDays(booking.checkIn, index), cents: base + (index < extra ? 1 : 0) }));
+        }
         validateBooking(booking);
         return booking;
     }
@@ -155,7 +220,10 @@
         if (!isObject(booking)) fail('INVALID_BOOKING', 'В списке найдено повреждённое бронирование.');
         validateId(booking.id);
         const nights = getNights(booking.checkIn, booking.checkOut);
-        readPrice(booking.price);
+        // A tiny explicit total can round its displayed average to zero, while
+        // still preserving a positive exact total and valid per-night cents.
+        if (!(booking.price === 0 && isCents(booking.totalCents) && booking.totalCents > 0 && Array.isArray(booking.nightlyRates))) readPrice(booking.price);
+        validateOptionalDetails(booking);
         if (hasOwn(booking, 'totalCents') && !isCents(booking.totalCents)) fail('INVALID_BOOKING', 'У бронирования неверная итоговая сумма.');
         if (hasOwn(booking, 'nightlyRates')) {
             if (!Array.isArray(booking.nightlyRates) || booking.nightlyRates.length !== nights) fail('INVALID_BOOKING', 'У бронирования повреждён список ночных цен.');
@@ -167,6 +235,7 @@
             if (!isCents(total) || (hasOwn(booking, 'totalCents') && total !== booking.totalCents)) fail('INVALID_BOOKING', 'Итог бронирования не совпадает с суммой ночей.');
         }
         if (hasOwn(booking, 'advancePayment')) validateAdvancePayment(booking.advancePayment, booking);
+        if (hasOwn(booking, 'paymentEntries') || hasOwn(booking, 'deletedPaymentIds')) getPaymentSummary(booking);
         return booking;
     }
 
@@ -227,6 +296,7 @@
         }
         if (receivedOn) payment.receivedOn = receivedOn;
         validateAdvancePayment(payment, booking);
+        getPaymentSummary({ ...booking, advancePayment: payment });
         return payment;
     }
 
@@ -242,6 +312,71 @@
             receivedOn: hasOwn(payment, 'receivedOn') ? payment.receivedOn : null,
             remainingCents: amountCents === null ? null : getBookingTotalCents(booking) - amountCents
         };
+    }
+
+    function validatePayment(payment) {
+        if (!isObject(payment) || Object.keys(payment).some(key => !['id', 'amountCents', 'receivedOn', 'note'].includes(key))) fail('INVALID_PAYMENT', 'Неверный формат оплаты.');
+        try { validateId(payment.id); }
+        catch { fail('INVALID_PAYMENT', 'У оплаты неверный идентификатор.'); }
+        if (!Number.isSafeInteger(payment.amountCents) || payment.amountCents <= 0) fail('INVALID_PAYMENT', 'Сумма оплаты должна быть положительной и указана до центов.');
+        if (hasOwn(payment, 'receivedOn')) {
+            try { dateMillis(payment.receivedOn); }
+            catch { fail('INVALID_PAYMENT', 'Проверьте дату получения оплаты.'); }
+        }
+        if (hasOwn(payment, 'note') && typeof payment.note !== 'string') fail('INVALID_PAYMENT', 'Заметка к оплате должна быть текстом.');
+        return payment;
+    }
+
+    function paymentEntries(booking) {
+        const entries = hasOwn(booking, 'paymentEntries') ? booking.paymentEntries : {};
+        const removed = hasOwn(booking, 'deletedPaymentIds') ? booking.deletedPaymentIds : {};
+        if (!isObject(entries) || !isObject(removed)) fail('INVALID_PAYMENT', 'Список оплат имеет неверный формат.');
+        Object.keys(removed).forEach(id => {
+            try { validateId(id); }
+            catch { fail('INVALID_PAYMENT', 'У удалённой оплаты неверный идентификатор.'); }
+            if (removed[id] !== true || hasOwn(entries, id)) fail('INVALID_PAYMENT', 'Список удалённых оплат повреждён.');
+        });
+        return Object.keys(entries).map(id => {
+            const payment = validatePayment(entries[id]);
+            if (payment.id !== id) fail('INVALID_PAYMENT', 'Номер оплаты не совпадает с её ключом.');
+            return copy(payment);
+        }).sort((a, b) => {
+            const first = a.receivedOn || '\uffff', second = b.receivedOn || '\uffff';
+            return first < second ? -1 : first > second ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+        });
+    }
+
+    function getPaymentSummary(booking) {
+        const advance = getAdvancePayment(booking);
+        const entries = paymentEntries(booking);
+        const recordedCents = entries.reduce((sum, payment) => sum + payment.amountCents, advance.amountCents || 0);
+        if (!Number.isSafeInteger(recordedCents)) fail('INVALID_PAYMENT', 'Общая сумма оплат слишком велика.');
+        const totalCents = getBookingTotalCents(booking);
+        if (recordedCents > totalCents) fail('PAYMENT_EXCEEDS_TOTAL', 'Полученные оплаты превышают согласованную стоимость проживания.');
+        const known = advance.status === 'not_received' || (advance.status === 'received' && advance.amountCents !== null);
+        const remainingCents = known ? totalCents - recordedCents : null;
+        return { known, receivedCents: known ? recordedCents : null, remainingCents, recordedCents, fullyPaid: known && remainingCents === 0, entries };
+    }
+
+    function buildPayment(input, booking) {
+        if (!isObject(input) || !isObject(booking)) fail('INVALID_PAYMENT', 'Неверные данные оплаты.');
+        const payment = { id: input.id, amountCents: euroCents(input.amount, 'INVALID_PAYMENT', 'Оплата') };
+        if (input.receivedOn !== undefined && input.receivedOn !== '') payment.receivedOn = input.receivedOn;
+        if (input.note !== undefined && input.note !== '') {
+            if (typeof input.note !== 'string') fail('INVALID_PAYMENT', 'Заметка к оплате должна быть текстом.');
+            payment.note = input.note;
+        }
+        validatePayment(payment);
+        if (booking.deletedPaymentIds && hasOwn(booking.deletedPaymentIds, payment.id)) fail('PAYMENT_REMOVED', 'Эта оплата уже удалена и не может быть добавлена повторно.');
+        const summary = getPaymentSummary(booking);
+        const existing = booking.paymentEntries && hasOwn(booking.paymentEntries, payment.id) ? booking.paymentEntries[payment.id] : null;
+        if (existing) {
+            if (!equal(existing, payment)) fail('PAYMENT_CONFLICT', 'Оплата с таким номером уже существует с другими данными.');
+            return payment;
+        }
+        if (!summary.known) fail('PAYMENT_BASE_UNKNOWN', 'Сначала уточните статус и сумму предоплаты, чтобы определить остаток.');
+        if (summary.recordedCents + payment.amountCents > getBookingTotalCents(booking)) fail('PAYMENT_EXCEEDS_TOTAL', 'Сумма оплаты превышает остаток по бронированию.');
+        return payment;
     }
 
     function getNightCents(booking, date) {
@@ -279,6 +414,20 @@
 
     function overlaps(a, b) { return a.checkIn < b.checkOut && a.checkOut > b.checkIn; }
 
+    function bookingDetails(booking) {
+        const details = copy(booking);
+        financialFields.forEach(key => { delete details[key]; });
+        return details;
+    }
+
+    function findActiveBooking(data, id) {
+        validateId(id);
+        if (data.deletedBookingIds && hasOwn(data.deletedBookingIds, id)) fail('DELETED_BOOKING', 'Это бронирование уже удалено.');
+        const booking = data.bookings.find(record => record.id === id);
+        if (!booking) fail('BOOKING_NOT_FOUND', 'Бронирование больше не найдено.');
+        return booking;
+    }
+
     function prepareImport(parsed) {
         if (!isObject(parsed) || !Array.isArray(parsed.bookings)) fail('INVALID_IMPORT', 'В файле нет корректного списка бронирований.');
         const bookings = copy(parsed.bookings);
@@ -315,10 +464,7 @@
             data.bookings.splice(index, 1);
             data.deletedBookingIds = Object.assign({}, data.deletedBookingIds || {}, { [operation.id]: true });
         } else if (operation.type === 'advancePayment') {
-            validateId(operation.id);
-            if (data.deletedBookingIds && hasOwn(data.deletedBookingIds, operation.id)) fail('DELETED_BOOKING', 'Эта бронь уже удалена. Предоплата не сохранена.');
-            const booking = data.bookings.find(record => record.id === operation.id);
-            if (!booking) fail('BOOKING_NOT_FOUND', 'Бронирование больше не найдено. Предоплата не сохранена.');
+            const booking = findActiveBooking(data, operation.id);
             const payment = copy(operation.advancePayment);
             validateAdvancePayment(payment, booking);
             const currentPayment = hasOwn(booking, 'advancePayment') ? booking.advancePayment : null;
@@ -327,6 +473,43 @@
             if (equal(currentPayment, payment)) return data;
             if (!equal(currentPayment, operation.expectedAdvancePayment)) fail('RECORD_CHANGED', 'Предоплата изменилась на другом устройстве. Откройте карточку заново.');
             booking.advancePayment = payment;
+            validateBooking(booking);
+        } else if (operation.type === 'updateBooking') {
+            const currentBooking = findActiveBooking(data, operation.id);
+            if (!isObject(operation.booking) || operation.booking.id !== operation.id || !isObject(operation.expectedBooking)) fail('INVALID_BOOKING', 'Неверные данные редактирования бронирования.');
+            const booking = copy(operation.booking);
+            const currentDetails = bookingDetails(currentBooking);
+            if (!equal(currentDetails, bookingDetails(operation.expectedBooking)) && !equal(currentDetails, bookingDetails(booking))) fail('RECORD_CHANGED', 'Детали бронирования изменились на другом устройстве. Откройте карточку заново.');
+            financialFields.forEach(key => {
+                delete booking[key];
+                if (hasOwn(currentBooking, key)) booking[key] = copy(currentBooking[key]);
+            });
+            validateBooking(booking);
+            if (data.bookings.some(other => other.id !== operation.id && overlaps(booking, other))) fail('OVERLAP', 'На эти даты уже есть бронирование.');
+            data.bookings[data.bookings.findIndex(record => record.id === operation.id)] = booking;
+        } else if (operation.type === 'addPayment') {
+            const booking = findActiveBooking(data, operation.id);
+            const payment = copy(operation.payment);
+            validatePayment(payment);
+            if (booking.deletedPaymentIds && hasOwn(booking.deletedPaymentIds, payment.id)) fail('PAYMENT_REMOVED', 'Эта оплата уже удалена и не может быть добавлена повторно.');
+            const existing = booking.paymentEntries && hasOwn(booking.paymentEntries, payment.id) ? booking.paymentEntries[payment.id] : null;
+            if (existing) {
+                if (!equal(existing, payment)) fail('PAYMENT_CONFLICT', 'Оплата с таким номером уже существует с другими данными.');
+                return data;
+            }
+            if (!getPaymentSummary(booking).known) fail('PAYMENT_BASE_UNKNOWN', 'Сначала уточните статус и сумму предоплаты, чтобы определить остаток.');
+            booking.paymentEntries = { ...(booking.paymentEntries || {}), [payment.id]: payment };
+            validateBooking(booking);
+        } else if (operation.type === 'removePayment') {
+            const booking = findActiveBooking(data, operation.id);
+            try { validateId(operation.paymentId); }
+            catch { fail('INVALID_PAYMENT', 'У оплаты неверный идентификатор.'); }
+            const payment = booking.paymentEntries && hasOwn(booking.paymentEntries, operation.paymentId) ? booking.paymentEntries[operation.paymentId] : null;
+            if (!payment) return data;
+            if (!operation.expectedPayment || !equal(payment, operation.expectedPayment)) fail('RECORD_CHANGED', 'Оплата изменилась на другом устройстве. Откройте карточку заново.');
+            delete booking.paymentEntries[operation.paymentId];
+            booking.deletedPaymentIds = { ...(booking.deletedPaymentIds || {}), [operation.paymentId]: true };
+            validateBooking(booking);
         } else {
             fail('INVALID_DATA', 'Неизвестная операция сохранения.');
         }
@@ -335,8 +518,9 @@
 
     return Object.freeze({
         DIRECT_RATES_2027, monthNames, DataError,
-        getNights, addDays, todayStr, quoteStay, buildBooking,
+        getNights, addDays, todayStr, quoteStay, buildBooking, buildBookingEdit,
         getBookingTotalCents, getNightCents, formatMoney, buildAdvancePayment, getAdvancePayment,
+        buildPayment, getPaymentSummary,
         normalizeData, prepareImport, reduceOperation,
         exportData: normalizeData
     });

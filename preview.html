@@ -2,323 +2,100 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ScaleaStay · Калькулятор 2027</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#edf4fb">
+    <title>ScaleaStay · Календарь 2027</title>
     <script src="https://cdn.tailwindcss.com"></script>
-
-
-    <style>
-        body {
-            background-image: url('web_ready_bg.jpg');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            padding-bottom: 120px;
-        }
-        body::before {
-            content: ''; position: fixed; inset: 0;
-            background: rgba(15, 23, 42, 0.3); z-index: -1;
-        }
-
-        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.7); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); }
-        .glass-dark { background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(16px); color: white; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); }
-
-        .day-cell { min-height: 100px; border-right: 1px solid rgba(0,0,0,0.05); border-bottom: 1px solid rgba(0,0,0,0.05); transition: 0.2s; user-select: none; overflow: hidden; }
-        .day-today { background: rgba(254, 243, 199, 0.7); }
-        .day-num { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; font-weight: 700; pointer-events: none; }
-        .day-today .day-num { background: #f59e0b; color: white; box-shadow: 0 2px 5px rgba(245, 158, 11, 0.4); }
-
-        .booking-bar { height: 22px; font-size: 11px; display: flex; align-items: center; margin-bottom: 2px; cursor: pointer; font-weight: 600; position: relative; z-index: 10; box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: transform 0.1s; }
-        .booking-bar:active { transform: scale(0.97); }
-        .booking-start { background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border-radius: 6px 0 0 6px; padding-left: 6px; margin-right: -1px; }
-        .booking-mid { background: #bfdbfe; color: transparent; opacity: 0.9; }
-        .booking-end { background: linear-gradient(135deg, #bfdbfe, #2563eb); border-radius: 0 6px 6px 0; margin-left: -1px; }
-        .booking-checkout { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; border-radius: 6px; width: 75%; font-size: 9px; padding-left: 4px; box-shadow: none; }
-
-        .booking-visible-continuation { background: #bfdbfe; color: #1e3a8a; }
-        .mobile-nav { display: none; }
-        @media (max-width: 1024px) {
-            .mobile-nav { display: grid; padding-bottom: calc(4px + env(safe-area-inset-bottom, 16px)); z-index: 999; }
-            .day-cell { min-height: 80px; }
-            body { padding: 12px 12px calc(120px + env(safe-area-inset-bottom, 16px)) 12px; }
-            .desktop-only { display: none !important; }
-        }
-        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .modal-animate { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        button:disabled, fieldset:disabled { opacity: .55; cursor: not-allowed; }
-        .sync-banner { margin: 0 0 16px; padding: 12px 16px; border-radius: 16px; font-size: 12px; font-weight: 600; background: #f1f5f9; color: #475569; }
-        .sync-banner[data-kind="ready"] { background: #ecfdf5; color: #047857; }
-        .sync-banner[data-kind="error"] { background: #fff1f2; color: #be123c; }
-        .sync-banner[data-kind="offline"], .sync-banner[data-kind="saving"] { background: #fffbeb; color: #92400e; }
-        .preview-banner { margin-bottom: 16px; border: 1px dashed #60a5fa; border-radius: 16px; padding: 12px 16px; background: #eff6ff; color: #1d4ed8; font-size: 12px; }
-        .preview-banner button { margin: 8px 8px 0 0; padding: 5px 10px; background: white; border-radius: 8px; border: 1px solid #bfdbfe; }
-        .tariff-note { font-size: 11px; line-height: 1.6; color: #64748b; }
-        @media (max-width: 640px) {
-            .brand-title { font-size: 16px; }
-            .calendar-header { gap: 4px; padding: 10px 8px; }
-            .calendar-header .month-label { min-width: 78px; padding-left: 4px; padding-right: 4px; }
-            .calendar-header .nav-btn { padding: 5px; }
-            #mobilePricesModal, #mobileDataModal { padding-bottom: 100px; }
-        }
-        @media (max-width: 360px) {
-            header.calendar-header { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-            .calendar-header .month-controls { grid-row: 2; grid-column: 1 / -1; justify-self: center; }
-            .calendar-header > :last-child { grid-row: 1; grid-column: 2; }
-        }
-        #deleteModal { z-index: 1070; }
-        #deleteModal > div { max-height: calc(100dvh - 40px); overflow-y: auto; }
-    </style>
+    <link rel="stylesheet" href="ui.css">
 </head>
-<body data-preview="true" class="text-slate-800">
-
-    <div id="loginScreen" class="fixed inset-0 z-[100] bg-slate-900 flex items-center justify-center p-4">
-        <div class="glass p-8 rounded-3xl w-full max-w-sm shadow-2xl relative overflow-hidden">
-            <div class="absolute -top-10 -right-10 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-2">Scalea<span class="text-blue-600">Stay</span></h2>
-            <p class="text-xs font-bold text-slate-400 mb-6 uppercase tracking-wider">Личный календарь · прямые брони</p>
-            <form id="loginForm" class="space-y-4 relative z-10">
-                <input type="email" id="emailInput" placeholder="Email" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm" required>
-                <input type="password" id="passwordInput" placeholder="Пароль" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm" required>
-                <div id="loginError" class="text-rose-500 text-xs font-bold hidden">Неверный логин или пароль</div>
-                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition active:scale-95">Войти в систему</button>
+<body data-preview="true">
+    <div id="loginScreen" class="login-screen fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <section class="login-card glass" aria-labelledby="loginTitle">
+            <div class="brand-mark" aria-hidden="true">S</div>
+            <h1 id="loginTitle" class="brand-title">Scalea<span>Stay</span></h1>
+            <p class="ss-muted">Личный календарь квартиры</p>
+            <form id="loginForm" class="ss-form">
+                <label class="ss-field" for="emailInput"><span>Электронная почта</span><input type="email" id="emailInput" autocomplete="username" required></label>
+                <label class="ss-field" for="passwordInput"><span>Пароль</span><input type="password" id="passwordInput" autocomplete="current-password" required></label>
+                <p id="loginError" class="ss-inline-error hidden" role="alert">Неверный логин или пароль</p>
+                <button type="submit" class="ss-button ss-primary ss-full">Войти</button>
             </form>
-        </div>
+        </section>
     </div>
 
-    <div id="appContainer" class="hidden h-full">
-        <div class="max-w-7xl mx-auto h-full">
-            <header class="calendar-header glass rounded-2xl p-3 mb-4 flex items-center justify-between sticky top-2 z-30">
-                <div class="flex items-center gap-2">
-                    <h1 class="brand-title text-xl font-black text-slate-800 tracking-tight pl-2">Scalea<span class="text-blue-600">Stay</span></h1>
-                    <div id="cloudStatus" class="w-2 h-2 rounded-full bg-slate-300 ml-2 animate-pulse" title="Загрузка данных"></div>
+    <div id="appContainer" class="hidden">
+        <div class="app-shell">
+            <header class="calendar-header glass">
+                <div class="brand-group"><div class="brand-mark" aria-hidden="true">S</div><div><h1 class="brand-title">Scalea<span>Stay</span></h1><p class="brand-caption">Квартира · прямые брони</p></div><span id="cloudStatus" class="w-2 h-2 rounded-full bg-slate-300" title="Загрузка данных"></span></div>
+                <div class="month-controls">
+                    <button type="button" id="prevMonth" class="ss-icon-button nav-btn" aria-label="Предыдущий месяц"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <div class="month-label"><div id="displayMonth">…</div><div id="displayYear">…</div></div>
+                    <button type="button" id="nextMonth" class="ss-icon-button nav-btn" aria-label="Следующий месяц"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
                 </div>
-
-                <div class="month-controls flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
-                    <button id="prevMonth" aria-label="Предыдущий месяц" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
-                    </button>
-                    <div class="month-label px-2 text-center min-w-[110px] select-none">
-                        <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">...</div>
-                        <div id="displayYear" class="text-[10px] font-bold text-slate-400">...</div>
-                    </div>
-                    <button id="nextMonth" aria-label="Следующий месяц" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-                    </button>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <button onclick="goToToday()" class="hidden lg:block px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-slate-700 transition">Сегодня</button>
-                    <button onclick="logout()" class="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100 transition" title="Выйти">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                    </button>
-                </div>
+                <button type="button" onclick="logout()" class="ss-icon-button logout-button" title="Выйти" aria-label="Выйти из календаря"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4H5v16h4m5-13 5 5-5 5m5-5H8"/></svg></button>
             </header>
-            <div id="previewBanner" class="preview-banner hidden">
-                <strong>Предпросмотр · демонстрационные записи</strong><br>
-                Изменения здесь не попадают в рабочий календарь.
-                <div><button id="previewSecond" type="button">Открыть второе окно</button><button id="previewConnection" type="button">Проверить без связи</button></div>
-            </div>
+
+            <div id="previewBanner" class="preview-banner hidden"><strong>Предпросмотр · демонстрационные записи</strong><p>Изменения здесь не попадают в рабочий календарь.</p><div class="preview-actions"><button id="previewSecond" type="button" class="ss-button">Открыть второе окно</button><button id="previewConnection" type="button" class="ss-button">Проверить без связи</button></div></div>
             <div id="syncBanner" class="sync-banner" role="status" aria-live="polite" data-kind="loading">Загружаем календарь…</div>
             <div id="actionError" class="sync-banner hidden" data-kind="error" role="alert"></div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+            <nav class="mobile-nav" aria-label="Разделы календаря">
+                <button type="button" id="navCal" onclick="toggleMobileView('calendar')" class="nav-item" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16"/></svg><span>Календарь</span></button>
+                <button type="button" id="navBookings" onclick="toggleMobileView('bookings')" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h3"/></svg><span>Брони</span></button>
+                <button type="button" id="navAdd" onclick="startNewBooking()" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v8m-4-4h8"/></svg><span>Добавить</span></button>
+                <button type="button" id="navMore" onclick="toggleMobileView('more')" class="nav-item"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg><span>Ещё</span></button>
+            </nav>
 
-                <div id="sidebarPanel" class="hidden lg:block lg:col-span-3 space-y-4">
-
-                    <div class="glass p-5 rounded-3xl relative">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-xs font-black uppercase tracking-widest text-blue-600">Новая бронь</h3>
-                            <button onclick="toggleMobileView('calendar')" class="lg:hidden p-2 text-slate-400 bg-slate-100 rounded-full hover:bg-slate-200">✕</button>
-                        </div>
-
-                        <form id="bookingForm" class="relative z-20"><fieldset data-write class="space-y-3" disabled>
-                            <input type="text" id="guestName" placeholder="Имя гостя" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold placeholder:font-normal">
-
-                            <input type="tel" id="guestPhone" placeholder="Телефон" class="w-full p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 outline-none text-sm">
-
-                            <div class="grid grid-cols-2 gap-2">
-                                <label for="checkIn" class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200 relative block cursor-pointer active:bg-slate-100 transition">
-                                    <span class="text-[9px] font-bold text-slate-400 uppercase block mb-1 pointer-events-none">Заезд</span>
-                                    <input type="date" id="checkIn" class="w-full h-8 bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer block" onclick="this.showPicker && this.showPicker();">
-                                </label>
-
-                                <label for="checkOut" class="bg-slate-50 p-2 rounded-xl ring-1 ring-slate-200 relative block cursor-pointer active:bg-slate-100 transition">
-                                    <span class="text-[9px] font-bold text-slate-400 uppercase block mb-1 pointer-events-none">Выезд</span>
-                                    <input type="date" id="checkOut" class="w-full h-8 bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer block" onclick="this.showPicker && this.showPicker();">
-                                </label>
-                            </div>
-
-                            <textarea id="guestNotes" placeholder="Заметки (трансфер, оплата...)" rows="2" class="w-full p-3 rounded-xl bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold placeholder:font-normal resize-none"></textarea>
-
-                            <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center justify-between relative">
-                                <div>
-                                    <label class="text-[9px] font-bold text-blue-400 uppercase block">Цена/ночь</label>
-                                    <input type="number" id="price" step="0.01" class="w-16 bg-transparent text-sm font-black text-blue-700 outline-none border-b border-blue-200" value="0">
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-[9px] font-bold text-blue-400 uppercase block">Итого</span>
-                                    <span id="liveTotal" class="text-lg font-black text-blue-600">0 €</span>
-                                </div>
-                            </div>
-
-                            <div class="bg-slate-50 p-3 rounded-xl space-y-3">
-                                <label for="depositStatus" class="block text-sm font-bold text-slate-700">Залог в счёт проживания</label>
-                                <select id="depositStatus" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                                    <option value="unknown">Не отмечено</option>
-                                    <option value="not_received">Не получен</option>
-                                    <option value="received">Получен</option>
-                                </select>
-                                <div id="depositFields" class="hidden space-y-3">
-                                    <label class="block text-sm text-slate-600" for="depositAmount">Полученная сумма, € (если известна)</label>
-                                    <input id="depositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                                    <label class="block text-sm text-slate-600" for="depositDate">Дата получения (необязательно)</label>
-                                    <input id="depositDate" type="date" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                                </div>
-                                <p id="depositSummary" class="text-sm text-slate-600" aria-live="polite">Оплата не отмечена. Остаток пока неизвестен.</p>
-                            </div>
-
-                            <p id="quoteHint" class="tariff-note">Прямые цены 2027 · квартира целиком · до 4 гостей. Уборка и электричество включены.</p>
-                            <button type="submit" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2 text-sm cursor-pointer">
-                                <span>Добавить</span>
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
-                            </button>
-                        </fieldset></form>
+            <main>
+                <section id="calendarView" class="view-section" aria-label="Календарь бронирований">
+                    <div class="section-heading"><div><p class="ss-eyebrow">Всё под рукой</p><h2>Календарь квартиры</h2></div><button type="button" onclick="goToToday()" class="ss-button ss-small">Сегодня</button></div>
+                    <section class="upcoming-section" aria-labelledby="upcomingTitle"><h3 id="upcomingTitle" class="ss-section-label">Ближайшие события</h3><div id="upcomingBlock" class="upcoming-grid"></div></section>
+                    <div class="calendar-card glass">
+                        <p class="calendar-legend"><span><b class="legend-paid">✓</b> Залог получен</span><span><b class="legend-wait">⏳</b> Не получен</span><span class="legend-unknown">Без значка — не отмечено</span></p>
+                        <div class="weekdays" aria-hidden="true"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div>
+                        <div id="calendarGrid" class="grid grid-cols-7 calendar-grid"></div>
+                        <p class="calendar-help">Нажмите на бронь, чтобы открыть карточку. На свободную дату — чтобы добавить новую.</p>
                     </div>
+                </section>
 
-                    <div id="statsBlock" class="glass-dark p-5 rounded-3xl text-white">
-                        <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Сумма броней · месяц</h3>
-                        <div class="flex justify-between items-baseline mb-3">
-                            <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
-                            <div class="text-right">
-                                <div id="statOccupancy" class="text-lg font-bold text-emerald-400">0%</div>
-                                <div id="statDays" class="text-[10px] opacity-60">0 ночей</div>
-                            </div>
-                        </div>
-                        <div class="border-t border-white/10 pt-3 flex justify-between items-center">
-                            <span class="text-[9px] opacity-50 font-black uppercase tracking-widest">За весь год</span>
-                            <span id="statYearIncome" class="text-sm font-bold text-emerald-400">0 €</span>
-                        </div>
+                <section id="bookingsView" class="view-section hidden" aria-labelledby="bookingsTitle">
+                    <div class="section-heading"><div><p class="ss-eyebrow">Гости и оплаты</p><h2 id="bookingsTitle">Все брони <span id="bookingListCount" class="count-badge">0</span></h2></div></div>
+                    <div class="filter-panel glass">
+                        <label class="ss-field search-field" for="bookingSearch"><span>Найти гостя</span><div class="search-control"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" id="bookingSearch" placeholder="Имя или телефон" autocomplete="off"></div></label>
+                        <div class="filter-grid"><label class="ss-field" for="bookingFilter"><span>Показать</span><select id="bookingFilter"><option value="all">Все брони</option><option value="upcoming">Предстоящие</option><option value="deposit">Залог не получен</option><option value="balance">С остатком</option><option value="paid">Оплаченные</option><option value="unknown">Оплата не отмечена</option></select></label><label class="ss-field" for="bookingSort"><span>Сортировать</span><select id="bookingSort"><option value="arrival">По дате заезда</option><option value="balance">По остатку</option><option value="total">По стоимости</option><option value="guest">По имени</option></select></label></div>
+                        <details class="filter-details"><summary>Источник обращения</summary><label class="ss-field" for="bookingSourceFilter"><span class="sr-only">Источник обращения</span><select id="bookingSourceFilter"><option value="all">Все источники</option><option value="unknown">Не отмечен</option><option value="website">Сайт</option><option value="social">Соцсети</option><option value="referral">Рекомендация</option><option value="repeat">Повторный гость</option></select></label></details>
                     </div>
+                    <p id="listSummary" class="list-summary" aria-live="polite"></p><div id="bookingList" class="booking-list"></div>
+                </section>
 
-                    <div class="glass p-4 rounded-3xl hidden lg:block">
-                        <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">База данных</h3>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button data-export onclick="downloadBackup()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-xl transition gap-1 border border-transparent hover:border-emerald-200">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                <span class="text-[9px] font-bold uppercase">Экспорт</span>
-                            </button>
-                            <button data-write onclick="document.getElementById('fileInputDesktop').click()" class="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl transition gap-1 border border-transparent hover:border-blue-200">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                                <span class="text-[9px] font-bold uppercase">Из копии</span>
-                            </button>
-                        </div>
-                        <input type="file" id="fileInputDesktop" class="hidden" accept=".json" onchange="uploadBackup(this)">
-                    </div>
+                <section id="sidebarPanel" class="view-section form-view hidden" aria-labelledby="formTitle">
+                    <div class="section-heading"><div><p class="ss-eyebrow">Прямое бронирование</p><h2 id="formTitle">Новая бронь</h2></div><button id="cancelEditBtn" type="button" onclick="cancelBookingEdit()" class="ss-button ss-small hidden">Отменить</button></div>
+                    <form id="bookingForm" class="glass booking-form"><fieldset data-write disabled>
+                        <div class="form-section"><h3 class="ss-section-label">Гость и даты</h3><div class="form-two"><label class="ss-field" for="guestName"><span>Имя гостя</span><input type="text" id="guestName" placeholder="Как зовут гостя" autocomplete="name"></label><label class="ss-field" for="guestPhone"><span>Телефон <small>необязательно</small></span><input type="tel" id="guestPhone" placeholder="+39…" autocomplete="tel"></label></div><div class="form-two date-fields"><label class="ss-field" for="checkIn"><span>Заезд</span><input type="date" id="checkIn"></label><label class="ss-field" for="checkOut"><span>Выезд</span><input type="date" id="checkOut"></label></div></div>
+                        <div class="form-section"><h3 class="ss-section-label">Стоимость проживания</h3><div id="newPriceBlock" class="price-panel"><label class="ss-field" for="price"><span>Цена за ночь, €</span><input type="number" inputmode="decimal" id="price" step="0.01" value="0"></label><div class="price-total"><span>Итого</span><strong id="liveTotal">0 €</strong></div></div><div id="editTotalBlock" class="hidden"><label class="ss-field" for="agreedTotal"><span>Согласованная сумма, €</span><input type="text" inputmode="decimal" autocomplete="off" id="agreedTotal"></label><p class="ss-help">Изменение дат само по себе не меняет согласованную сумму.</p><button id="recalculateBooking" type="button" class="ss-button ss-full">Пересчитать по нашим ценам 2027</button></div><p id="quoteHint" class="tariff-note">Прямые цены 2027 · квартира целиком · до 4 гостей. Уборка и электричество включены.</p></div>
+                        <div id="newDepositBlock" class="form-section"><h3 class="ss-section-label">Залог в счёт проживания</h3><label class="ss-field" for="depositStatus"><span>Получен ли залог?</span><select id="depositStatus"><option value="unknown">Не отмечено</option><option value="not_received">Не получен</option><option value="received">Получен</option></select></label><div id="depositFields" class="hidden"><div class="form-two"><label class="ss-field" for="depositAmount"><span>Полученная сумма, € <small>если известна</small></span><input id="depositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150"></label><label class="ss-field" for="depositDate"><span>Дата получения <small>необязательно</small></span><input id="depositDate" type="date"></label></div></div><p id="depositSummary" class="payment-hint" aria-live="polite">Оплата не отмечена. Остаток пока неизвестен.</p></div>
+                        <div class="form-section"><details class="optional-details"><summary><span>Дополнительно</span><span class="ss-muted">Гости, время, уборка и заметки</span></summary><div class="optional-fields"><div class="form-two"><label class="ss-field" for="guestCount"><span>Количество гостей</span><select id="guestCount"><option value="">Не указано</option><option value="1">1 гость</option><option value="2">2 гостя</option><option value="3">3 гостя</option><option value="4">4 гостя</option></select></label><label class="ss-field" for="inquirySource"><span>Откуда узнали</span><select id="inquirySource"><option value="unknown">Не отмечено</option><option value="website">Сайт</option><option value="social">Соцсети</option><option value="referral">Рекомендация</option><option value="repeat">Повторный гость</option></select></label></div><div class="form-two"><label class="ss-field" for="arrivalTime"><span>Время заезда</span><input type="time" id="arrivalTime"></label><label class="ss-field" for="departureTime"><span>Время выезда</span><input type="time" id="departureTime"></label></div><label class="ss-field" for="cleaningStatus"><span>Уборка после выезда</span><select id="cleaningStatus"><option value="unknown">Не отмечено</option><option value="needed">Нужна</option><option value="scheduled">Назначена</option><option value="ready">Готово</option></select></label><label class="ss-field" for="guestNotes"><span>Заметки</span><textarea id="guestNotes" rows="3" placeholder="Что важно помнить о госте или заезде"></textarea></label></div></details></div>
+                        <div class="form-submit"><button id="saveBookingBtn" type="submit" class="ss-button ss-primary ss-full">Добавить бронь</button></div>
+                    </fieldset></form>
+                </section>
 
-                     <div class="glass p-4 rounded-3xl hidden lg:block">
-                        <h3 class="text-[10px] font-black uppercase text-slate-400 mb-3">Наши цены · 2027</h3>
-                        <p class="tariff-note mb-2">Прямая аренда · €/ночь · до 4 гостей</p><div id="desktopPricesList" class="max-h-80 overflow-y-auto custom-scrollbar space-y-1 pr-1"></div>
-                    </div>
-                </div>
-
-                <div id="calendarView" class="lg:col-span-9 h-full">
-                    <div class="glass rounded-3xl overflow-hidden shadow-sm min-h-[500px]">
-                        <p class="p-3 text-xs text-slate-600 bg-white/80 border-b border-slate-100">Залог: ✓ получен · ⏳ не получен · без значка — не отмечено</p>
-                        <div class="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200">
-                            <div class="py-3 text-center text-[10px] font-black text-slate-400">ПН</div>
-                            <div class="py-3 text-center text-[10px] font-black text-slate-400">ВТ</div>
-                            <div class="py-3 text-center text-[10px] font-black text-slate-400">СР</div>
-                            <div class="py-3 text-center text-[10px] font-black text-slate-400">ЧТ</div>
-                            <div class="py-3 text-center text-[10px] font-black text-slate-400">ПТ</div>
-                            <div class="py-3 text-center text-[10px] font-black text-rose-400">СБ</div>
-                            <div class="py-3 text-center text-[10px] font-black text-rose-400">ВС</div>
-                        </div>
-                        <div id="calendarGrid" class="grid grid-cols-7 bg-white/40"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="mobile-nav fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-white rounded-2xl shadow-2xl p-1 grid grid-cols-4 gap-1">
-            <button onclick="toggleMobileView('calendar')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-blue-400 gap-1.5" id="navCal">
-                <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Календарь</span>
-            </button>
-            <button onclick="toggleMobileView('add')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navAdd">
-                <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Бронь</span>
-            </button>
-            <button onclick="toggleMobileView('prices')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navPrices">
-                <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">Тарифы</span>
-            </button>
-            <button onclick="toggleMobileView('data')" class="flex flex-col sm:flex-row items-center justify-center py-2 sm:py-3 rounded-xl transition active:bg-white/10 text-slate-400 gap-1.5" id="navData">
-                <svg class="w-6 h-6 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
-                <span class="text-[9px] sm:text-[11px] font-bold tracking-wide">База</span>
-            </button>
+                <section id="moreView" class="view-section hidden" aria-labelledby="moreTitle"><div class="section-heading"><div><p class="ss-eyebrow">Картина целиком</p><h2 id="moreTitle">Обзор и настройки</h2></div></div>
+                    <section id="statsBlock" class="glass overview-card" aria-labelledby="statsTitle"><div class="overview-title"><h3 id="statsTitle">Бронирования и оплаты</h3><p id="statsScope" class="ss-muted">Оплаты по броням с заездом в выбранном месяце</p></div><div class="stats-grid"><div class="stat-card stat-accent"><span>Сумма броней · месяц</span><strong id="statIncome">0 €</strong><small>По ночам проживания</small></div><div class="stat-card"><span>Занятость · месяц</span><strong id="statOccupancy">0%</strong><small id="statDays">0 ночей</small></div><div class="stat-card"><span>Сумма броней · год</span><strong id="statYearIncome">0 €</strong><small>По ночам проживания</small></div><div class="stat-card"><span>Получено</span><strong id="statReceived">0 €</strong><small>Залог и остальные оплаты</small></div><div class="stat-card"><span>Осталось получить</span><strong id="statRemaining">0 €</strong><small>По броням с известной оплатой</small></div><div class="stat-card"><span>Оплата не уточнена</span><strong id="statUnknown">0</strong><small>Нужно уточнить данные</small></div></div></section>
+                    <div class="more-grid"><section class="glass overview-card"><h3>Наши цены · 2027</h3><p class="ss-help">За ночь за квартиру целиком, до 4 гостей. Уборка и электричество включены.</p><div id="desktopPricesList" class="prices-list"></div><button type="button" onclick="toggleMobileView('prices')" class="ss-button ss-full">Открыть все цены</button></section><section class="glass overview-card"><h3>Резервная копия</h3><p class="ss-help">Сохраните брони отдельным файлом или добавьте записи из ранее сохранённой копии.</p><div class="backup-actions"><button type="button" data-export onclick="downloadBackup()" class="ss-button ss-primary ss-full">Скачать копию</button><button type="button" data-write onclick="document.getElementById('fileInputDesktop').click()" class="ss-button ss-full">Добавить из копии</button><button type="button" onclick="toggleMobileView('data')" class="ss-button ss-quiet ss-full">Подробнее о копиях</button></div><input type="file" id="fileInputDesktop" class="hidden" accept=".json" onchange="uploadBackup(this)"></section></div>
+                </section>
+            </main>
+            <p class="app-footer">ScaleaStay · один календарь для ваших телефонов</p>
         </div>
     </div>
 
-    <div id="mobileDataModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
-        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg text-slate-800">Данные</h2>
-            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
-        </div>
-        <div class="p-6 flex flex-col gap-4 justify-center items-center flex-grow text-center"><div id="dataModalError" class="sync-banner hidden w-full" data-kind="error" role="alert"></div><div id="dataModalStatus" class="sync-banner hidden w-full" role="status" aria-live="polite"></div>
-            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 w-full active:scale-95 transition">
-                <h3 class="font-bold text-blue-800 mb-2">Скачать базу</h3>
-                <button data-export onclick="downloadBackup()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg mt-2">Скачать .json</button>
-            </div>
-            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 w-full active:scale-95 transition">
-                <h3 class="font-bold text-slate-800 mb-2">Добавить брони из копии</h3><p class="tariff-note mb-3">Существующие записи и цены сохраняются. При конфликте импорт отменяется целиком.</p>
-                <button data-write onclick="document.getElementById('fileInputMobile').click()" class="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold mt-2">Выбрать файл</button>
-                <input type="file" id="fileInputMobile" class="hidden" accept=".json" onchange="uploadBackup(this)">
-            </div>
-        </div>
-    </div>
+    <section id="mobileDataModal" class="fullscreen-panel hidden flex-col" aria-labelledby="dataTitle"><header class="panel-header"><h2 id="dataTitle">Резервные копии</h2><button type="button" onclick="toggleMobileView('more')" class="ss-icon-button" aria-label="Закрыть резервные копии">✕</button></header><div class="panel-content"><div id="dataModalError" class="sync-banner hidden" data-kind="error" role="alert"></div><div id="dataModalStatus" class="sync-banner hidden" role="status" aria-live="polite"></div><section class="ss-card"><h3>Сохранить календарь</h3><p class="ss-help">В файле будут брони, согласованные суммы и отметки об оплатах.</p><button type="button" data-export onclick="downloadBackup()" class="ss-button ss-primary ss-full">Скачать файл .json</button></section><section class="ss-card"><h3>Добавить брони из копии</h3><p class="ss-help">Существующие записи и цены сохраняются. При конфликте импорт отменяется целиком.</p><button type="button" data-write onclick="document.getElementById('fileInputMobile').click()" class="ss-button ss-full">Выбрать файл</button><input type="file" id="fileInputMobile" class="hidden" accept=".json" onchange="uploadBackup(this)"></section></div></section>
+    <section id="mobilePricesModal" class="fullscreen-panel hidden flex-col" aria-labelledby="pricesTitle"><header class="panel-header"><h2 id="pricesTitle">Наши цены · 2027</h2><button type="button" onclick="toggleMobileView('more')" class="ss-icon-button" aria-label="Закрыть цены">✕</button></header><div class="panel-content"><p class="ss-help">За ночь за квартиру целиком, до 4 гостей. Уборка и электричество включены. Согласованную стоимость конкретной брони можно указать вручную.</p><div id="mobilePricesList" class="prices-list"></div><button type="button" onclick="toggleMobileView('more')" class="ss-button ss-primary ss-full">Готово</button></div></section>
 
-    <div id="mobilePricesModal" class="fixed inset-0 bg-white z-[60] hidden flex-col modal-animate">
-        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
-            <h2 class="font-black text-lg text-slate-800">Наши цены · 2027</h2>
-            <button onclick="toggleMobileView('calendar')" class="p-2 bg-slate-200 rounded-full">✕</button>
-        </div>
-        <p class="tariff-note px-4 pt-4">За ночь за квартиру целиком, до 4 гостей. Уборка и электричество включены. Цену конкретной брони можно указать вручную.</p><div class="p-4 overflow-y-auto flex-grow" id="mobilePricesList"></div>
-        <div class="p-4 border-t bg-white safe-area-bottom">
-            <button onclick="toggleMobileView('calendar')" class="w-full bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg">Готово</button>
-        </div>
-    </div>
-
-    <div id="deleteModal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 modal-animate">
-        <div class="glass p-5 rounded-3xl w-full max-w-sm shadow-2xl">
-            <h3 class="text-lg font-bold text-center text-slate-800 mb-4">Карточка брони</h3>
-            <div id="deleteModalStatus" class="sync-banner hidden" role="status" aria-live="polite"></div><div id="deleteModalError" class="sync-banner hidden" data-kind="error" role="alert"></div><div id="deleteModalInfo" class="bg-white p-4 rounded-xl text-center mb-6 shadow-sm border border-slate-100 text-sm"></div>
-            <p id="deleteModalChanged" class="hidden mb-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm" role="status">Залог обновлён на другом телефоне. Введённые вами значения оставлены ниже. Закройте и снова откройте карточку, чтобы редактировать актуальные данные.</p>
-            <form id="advancePaymentForm" class="mb-5"><fieldset id="depositEditor" data-write class="space-y-3" disabled>
-                <label for="modalDepositStatus" class="block text-sm font-bold text-slate-700">Залог в счёт проживания</label>
-                <select id="modalDepositStatus" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                    <option value="unknown">Не отмечено</option>
-                    <option value="not_received">Не получен</option>
-                    <option value="received">Получен</option>
-                </select>
-                <div id="modalDepositFields" class="hidden space-y-3">
-                    <label for="modalDepositAmount" class="block text-sm text-slate-600">Полученная сумма, € (если известна)</label>
-                    <input id="modalDepositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                    <label for="modalDepositDate" class="block text-sm text-slate-600">Дата получения (необязательно)</label>
-                    <input id="modalDepositDate" type="date" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
-                </div>
-                <p id="modalDepositSummary" class="text-sm text-slate-600" aria-live="polite"></p>
-                <button id="saveDepositBtn" type="submit" class="w-full min-h-[44px] p-3 bg-blue-600 text-white font-bold rounded-xl">Сохранить залог</button>
-            </fieldset></form>
-            <div class="flex gap-3">
-                <button onclick="closeDeleteModal()" class="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition text-sm">Закрыть</button>
-                <button id="confirmDeleteBtn" data-write class="flex-1 py-3 font-bold bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition shadow-lg shadow-rose-200 text-sm">Удалить</button>
-            </div>
-        </div>
-    </div>
-
+    <section id="deleteModal" class="hidden detail-overlay" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="detail-sheet glass"><header class="detail-header"><div><p class="ss-eyebrow">Гость · проживание · оплаты</p><h2 id="detailTitle">Карточка брони</h2></div><button type="button" onclick="closeDeleteModal()" class="ss-icon-button" aria-label="Закрыть карточку">✕</button></header><div class="detail-content"><div id="deleteModalStatus" class="sync-banner hidden" role="status" aria-live="polite"></div><div id="deleteModalError" class="sync-banner hidden" data-kind="error" role="alert"></div><div id="deleteModalInfo" class="booking-detail-info"></div><button id="editBookingBtn" type="button" data-write onclick="editSelectedBooking()" class="ss-button ss-full">Редактировать бронь</button><p id="deleteModalChanged" class="payment-hint ss-warn hidden" role="status">Бронь обновлена на другом телефоне. Введённые вами значения оставлены ниже. Закройте и снова откройте карточку, чтобы редактировать актуальные данные.</p>
+                    <section class="detail-section" aria-labelledby="paymentsTitle"><h3 id="paymentsTitle">Оплаты и остаток</h3><div id="paymentSummary" class="payment-summary"></div><p id="paymentBaseHint" class="ss-help"></p><div id="paymentList" class="payment-list"></div><form id="paymentForm"><fieldset id="paymentEditor" data-write disabled><h4>Добавить оплату</h4><label class="ss-field" for="paymentAmount"><span>Полученная сумма, €</span><input id="paymentAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 200" required></label><div class="form-two"><label class="ss-field" for="paymentDate"><span>Дата <small>необязательно</small></span><input id="paymentDate" type="date"></label><label class="ss-field" for="paymentNote"><span>Заметка <small>необязательно</small></span><input id="paymentNote" type="text" placeholder="Например, перевод"></label></div><button id="addPaymentBtn" type="submit" class="ss-button ss-primary ss-full">Записать оплату</button></fieldset></form></section>
+                    <details class="detail-section optional-details"><summary><span>Залог в счёт проживания</span><span class="ss-muted">Уточнить отметку или сумму</span></summary><form id="advancePaymentForm"><fieldset id="depositEditor" data-write disabled><label class="ss-field" for="modalDepositStatus"><span>Получен ли залог?</span><select id="modalDepositStatus"><option value="unknown">Не отмечено</option><option value="not_received">Не получен</option><option value="received">Получен</option></select></label><div id="modalDepositFields" class="hidden"><label class="ss-field" for="modalDepositAmount"><span>Полученная сумма, € <small>если известна</small></span><input id="modalDepositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150"></label><label class="ss-field" for="modalDepositDate"><span>Дата получения <small>необязательно</small></span><input id="modalDepositDate" type="date"></label></div><p id="modalDepositSummary" class="payment-hint" aria-live="polite"></p><button id="saveDepositBtn" type="submit" class="ss-button ss-full">Сохранить залог</button></fieldset></form></details>
+                    <div class="detail-actions"><button type="button" onclick="closeDeleteModal()" class="ss-button ss-full">Закрыть карточку</button><button type="button" id="confirmDeleteBtn" data-write class="ss-button ss-danger ss-full">Удалить бронь</button></div>
+                </div></div></section>
     <script src="data.js"></script>
     <script src="preview-store.js"></script>
     <script src="app.js"></script>

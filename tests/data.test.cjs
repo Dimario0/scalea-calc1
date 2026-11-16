@@ -467,3 +467,289 @@ test('advance fields survive export/import, while a stale imported record cannot
     const deleted = D.reduceOperation(updated, { type: 'delete', id: 'OLD', expectedBooking: updated.bookings[0] });
     assert.throws(() => D.reduceOperation(deleted, { type: 'import', bookings: exported.bookings }), hasCode('DELETED_BOOKING'));
 });
+
+const knownBooking = (overrides = {}) => fresh('A', '2027-06-30', '2027-07-03', { advancePayment: { status: 'not_received' }, ...overrides });
+const bookingRoot = booking => ({ ...root(), bookings: [booking] });
+const payment = (id, amountCents, extra = {}) => ({ id, amountCents, ...extra });
+
+test('optional guest, arrival, departure, cleaning and source fields are saved without writing defaults to old bookings', () => {
+    const booking = knownBooking({ guestCount: 4, arrivalTime: '15:30', departureTime: '10:00', cleaningStatus: 'scheduled', inquirySource: 'website' });
+    assert.equal(booking.guestCount, 4);
+    assert.equal(booking.arrivalTime, '15:30');
+    assert.equal(booking.departureTime, '10:00');
+    assert.equal(booking.cleaningStatus, 'scheduled');
+    assert.equal(booking.inquirySource, 'website');
+    const old = D.normalizeData({ bookings: [legacy()] }).bookings[0];
+    for (const key of ['guestCount', 'arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource']) assert.ok(!Object.hasOwn(old, key));
+});
+
+test('booking details accept every declared enum and reject impossible counts, times and sources', () => {
+    for (const cleaningStatus of ['unknown', 'needed', 'scheduled', 'ready']) assert.equal(knownBooking({ cleaningStatus }).cleaningStatus, cleaningStatus);
+    for (const inquirySource of ['unknown', 'website', 'social', 'referral', 'repeat']) assert.equal(knownBooking({ inquirySource }).inquirySource, inquirySource);
+    assert.equal(knownBooking({ guestCount: '2' }).guestCount, 2);
+    for (const invalid of [{ guestCount: 0 }, { guestCount: 5 }, { guestCount: 1.5 }, { arrivalTime: '24:00' }, { departureTime: '09:60' }, { arrivalTime: '9:00' }, { cleaningStatus: 'done' }, { inquirySource: 'booking' }]) {
+        assert.throws(() => knownBooking(invalid), hasCode('INVALID_BOOKING_DETAILS'));
+    }
+    assert.throws(() => D.prepareImport({ bookings: [{ ...legacy(), guestCount: '2' }] }), hasCode('INVALID_BOOKING_DETAILS'));
+});
+
+test('editing clears optional blank inputs and preserves exact entered text and unrelated fields', () => {
+    const original = { ...knownBooking({ guestCount: 2, arrivalTime: '15:00', departureTime: '10:00', cleaningStatus: 'needed', inquirySource: 'social' }), extra: { keep: true } };
+    const edited = D.buildBookingEdit({ guest: ' Новое имя ', phone: '', notes: '', guestCount: '', arrivalTime: '', departureTime: '', cleaningStatus: 'ready', inquirySource: 'repeat' }, original);
+    assert.equal(edited.guest, ' Новое имя ');
+    assert.equal(edited.phone, '');
+    assert.equal(edited.notes, '');
+    for (const key of ['guestCount', 'arrivalTime', 'departureTime']) assert.ok(!Object.hasOwn(edited, key));
+    assert.equal(edited.cleaningStatus, 'ready');
+    assert.equal(edited.inquirySource, 'repeat');
+    assert.deepEqual(edited.extra, original.extra);
+    assert.equal(original.arrivalTime, '15:00');
+});
+
+test('editing details or entering the same agreed total does not reprice historical precision', () => {
+    const original = legacy('OLD', '2026-05-01', '2026-05-04', 1.005, { extra: { keep: true }, paidCents: 100 });
+    for (const total of [undefined, '', '3.00']) {
+        const edited = D.buildBookingEdit({ notes: 'updated', total }, original);
+        assert.equal(edited.price, 1.005);
+        assert.ok(!Object.hasOwn(edited, 'totalCents'));
+        assert.ok(!Object.hasOwn(edited, 'nightlyRates'));
+        assert.equal(D.getBookingTotalCents(edited), 300);
+        assert.equal(edited.paidCents, 100);
+        assert.deepEqual(edited.extra, original.extra);
+    }
+});
+
+test('moving dates preserves the agreed total and distributes exact cents without loading default tariffs', () => {
+    const original = legacy('OLD', '2026-06-30', '2026-07-03', 101.67);
+    const edited = D.buildBookingEdit({ checkIn: '2027-08-01', checkOut: '2027-08-05', total: '' }, original);
+    assert.equal(edited.totalCents, 30500);
+    assert.equal(edited.price, 76.25);
+    assert.deepEqual(edited.nightlyRates.map(rate => rate.cents), [7625, 7625, 7625, 7625]);
+    assert.equal(original.price, 101.67);
+    const nextYear = D.buildBookingEdit({ checkIn: '2028-08-01', checkOut: '2028-08-05' }, edited);
+    assert.equal(nextYear.totalCents, 30500);
+});
+
+test('an explicitly changed agreed total is allocated in integer cents with a deterministic remainder', () => {
+    const edited = D.buildBookingEdit({ total: '100.00' }, knownBooking());
+    assert.equal(edited.totalCents, 10000);
+    assert.equal(edited.price, 33.33);
+    assert.deepEqual(edited.nightlyRates.map(rate => rate.cents), [3334, 3333, 3333]);
+    const tiny = D.buildBookingEdit({ total: '0.01' }, knownBooking());
+    assert.equal(tiny.price, 0);
+    assert.deepEqual(tiny.nightlyRates.map(rate => rate.cents), [1, 0, 0]);
+    assert.equal(D.getBookingTotalCents(tiny), 1);
+    for (const total of ['0', '-1', '1.005', 'bad', null]) assert.throws(() => D.buildBookingEdit({ total }, knownBooking()), hasCode('INVALID_TOTAL'));
+});
+
+test('only explicit recalculation with a matching quote applies seasonal nightly prices during editing', () => {
+    const original = legacy('OLD', '2027-06-30', '2027-07-03', 100);
+    const quote = D.quoteStay(original.checkIn, original.checkOut);
+    assert.equal(D.buildBookingEdit({ quote }, original).price, 100);
+    const recalculated = D.buildBookingEdit({ total: '305', quote }, original);
+    assert.equal(recalculated.totalCents, 30500);
+    assert.deepEqual(recalculated.nightlyRates.map(rate => rate.cents), [8500, 11000, 11000]);
+    assert.equal(recalculated.price, 101.67);
+});
+
+test('payment summary counts the deposit once and adds only subsequent ledger entries', () => {
+    const booking = { ...knownBooking({ advancePayment: { status: 'received', amountCents: 10000 } }), paymentEntries: { P1: payment('P1', 5000), P2: payment('P2', 2500) } };
+    const summary = D.getPaymentSummary(booking);
+    assert.equal(summary.known, true);
+    assert.equal(summary.receivedCents, 17500);
+    assert.equal(summary.recordedCents, 17500);
+    assert.equal(summary.remainingCents, 13000);
+    assert.equal(summary.fullyPaid, false);
+    assert.deepEqual(summary.entries.map(entry => entry.id), ['P1', 'P2']);
+    assert.equal(D.getBookingTotalCents(booking), 30500);
+});
+
+test('unknown deposit bases remain unknown and cannot acquire new payments as assumed debt', () => {
+    for (const advancePayment of [undefined, { status: 'unknown' }, { status: 'received' }]) {
+        const booking = knownBooking();
+        if (advancePayment) booking.advancePayment = advancePayment;
+        else delete booking.advancePayment;
+        const summary = D.getPaymentSummary(booking);
+        assert.equal(summary.known, false);
+        assert.equal(summary.receivedCents, null);
+        assert.equal(summary.remainingCents, null);
+        assert.equal(summary.fullyPaid, false);
+        assert.throws(() => D.buildPayment({ id: 'P1', amount: '50' }, booking), hasCode('PAYMENT_BASE_UNKNOWN'));
+        assert.throws(() => D.reduceOperation(bookingRoot(booking), { type: 'addPayment', id: booking.id, payment: payment('P1', 5000) }), hasCode('PAYMENT_BASE_UNKNOWN'));
+    }
+});
+
+test('an unknown deposit with an existing ledger preserves known receipts without fabricating a balance', () => {
+    const booking = { ...knownBooking({ advancePayment: { status: 'received' } }), paymentEntries: { P1: payment('P1', 5000) } };
+    assert.deepEqual(D.getPaymentSummary(booking), { known: false, receivedCents: null, remainingCents: null, recordedCents: 5000, fullyPaid: false, entries: [payment('P1', 5000)] });
+    assert.equal(D.normalizeData(bookingRoot(booking)).bookings[0].paymentEntries.P1.amountCents, 5000);
+});
+
+test('payment builder uses exact cents and optional real receipt date and note', () => {
+    const booking = knownBooking();
+    assert.deepEqual(D.buildPayment({ id: 'P1', amount: '0,29', receivedOn: '2026-11-16', note: 'перевод' }, booking), { id: 'P1', amountCents: 29, receivedOn: '2026-11-16', note: 'перевод' });
+    assert.deepEqual(D.buildPayment({ id: 'P2', amount: '100.00', receivedOn: '', note: '' }, booking), { id: 'P2', amountCents: 10000 });
+    for (const amount of ['0', '-1', '1.005', 'NaN', '1e2']) assert.throws(() => D.buildPayment({ id: 'BAD', amount }, booking), hasCode('INVALID_PAYMENT'));
+    assert.throws(() => D.buildPayment({ id: 'BAD', amount: '1', receivedOn: '2027-02-29' }, booking), hasCode('INVALID_PAYMENT'));
+    assert.throws(() => D.buildPayment({ id: 'BAD', amount: '1', note: {} }, booking), hasCode('INVALID_PAYMENT'));
+});
+
+test('payment summary sorts receipt dates then ids and does not expose mutable ledger objects', () => {
+    const booking = { ...knownBooking(), paymentEntries: { Z: payment('Z', 100, { receivedOn: '2027-01-02' }), B: payment('B', 100), A: payment('A', 100, { receivedOn: '2027-01-01' }) } };
+    const summary = D.getPaymentSummary(booking);
+    assert.deepEqual(summary.entries.map(entry => entry.id), ['A', 'Z', 'B']);
+    summary.entries[0].amountCents = 1;
+    assert.equal(booking.paymentEntries.A.amountCents, 100);
+});
+
+test('two independent payment ids survive transaction retries without duplicating a receipt', () => {
+    const initial = bookingRoot(knownBooking({ advancePayment: { status: 'received', amountCents: 5000 } }));
+    const first = { type: 'addPayment', id: 'A', payment: payment('P1', 10000) };
+    const second = { type: 'addPayment', id: 'A', payment: payment('P2', 10000) };
+    const both = D.reduceOperation(D.reduceOperation(initial, first), second);
+    assert.deepEqual(D.reduceOperation(both, first), both);
+    assert.equal(D.getPaymentSummary(both.bookings[0]).receivedCents, 25000);
+    assert.equal(D.getPaymentSummary(both.bookings[0]).remainingCents, 5500);
+    assert.deepEqual(both.prices, initial.prices);
+    assert.deepEqual(both.futureMetadata, initial.futureMetadata);
+    assert.ok(!Object.hasOwn(initial.bookings[0], 'paymentEntries'));
+});
+
+test('a competing payment is rechecked against the latest remaining balance on retry', () => {
+    const initial = bookingRoot(knownBooking());
+    const first = { type: 'addPayment', id: 'A', payment: payment('P1', 20000) };
+    const second = { type: 'addPayment', id: 'A', payment: payment('P2', 20000) };
+    assert.equal(D.getPaymentSummary(D.reduceOperation(initial, second).bookings[0]).remainingCents, 10500);
+    const committed = D.reduceOperation(initial, first);
+    assert.throws(() => D.reduceOperation(committed, second), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    assert.deepEqual(Object.keys(committed.bookings[0].paymentEntries), ['P1']);
+});
+
+test('paying the exact remaining cents marks fully paid, without repricing the stay', () => {
+    const original = knownBooking({ advancePayment: { status: 'received', amountCents: 10000 } });
+    const finalPayment = D.buildPayment({ id: 'FINAL', amount: '205.00' }, original);
+    const result = D.reduceOperation(bookingRoot(original), { type: 'addPayment', id: 'A', payment: finalPayment });
+    assert.equal(D.getPaymentSummary(result.bookings[0]).fullyPaid, true);
+    assert.equal(D.getPaymentSummary(result.bookings[0]).remainingCents, 0);
+    assert.equal(result.bookings[0].totalCents, original.totalCents);
+    assert.deepEqual(result.bookings[0].nightlyRates, original.nightlyRates);
+    assert.throws(() => D.buildPayment({ id: 'EXTRA', amount: '0.01' }, result.bookings[0]), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+});
+
+test('an existing payment id with changed content conflicts, while identical builder and operation retries are safe', () => {
+    const initial = bookingRoot(knownBooking());
+    const saved = D.reduceOperation(initial, { type: 'addPayment', id: 'A', payment: payment('P1', 10000) });
+    assert.deepEqual(D.buildPayment({ id: 'P1', amount: '100' }, saved.bookings[0]), payment('P1', 10000));
+    assert.throws(() => D.reduceOperation(saved, { type: 'addPayment', id: 'A', payment: payment('P1', 9999) }), hasCode('PAYMENT_CONFLICT'));
+});
+
+test('removing one payment retains all other receipts and leaves a tombstone that blocks resurrection', () => {
+    const initial = bookingRoot({ ...knownBooking(), paymentEntries: { P1: payment('P1', 10000), P2: payment('P2', 5000) } });
+    const remove = { type: 'removePayment', id: 'A', paymentId: 'P1', expectedPayment: payment('P1', 10000) };
+    const result = D.reduceOperation(initial, remove);
+    assert.deepEqual(result.bookings[0].paymentEntries, { P2: payment('P2', 5000) });
+    assert.deepEqual(result.bookings[0].deletedPaymentIds, { P1: true });
+    assert.deepEqual(D.reduceOperation(result, remove), result);
+    assert.equal(D.getPaymentSummary(result.bookings[0]).remainingCents, 25500);
+    assert.throws(() => D.reduceOperation(result, { type: 'addPayment', id: 'A', payment: payment('P1', 10000) }), hasCode('PAYMENT_REMOVED'));
+    assert.throws(() => D.buildPayment({ id: 'P1', amount: '100' }, result.bookings[0]), hasCode('PAYMENT_REMOVED'));
+    assert.throws(() => D.reduceOperation(result, { type: 'import', bookings: initial.bookings }), hasCode('ID_CONFLICT'));
+});
+
+test('stale payment deletion refuses changed expected content', () => {
+    const initial = bookingRoot({ ...knownBooking(), paymentEntries: { P1: payment('P1', 10000, { note: 'latest' }) } });
+    assert.throws(() => D.reduceOperation(initial, { type: 'removePayment', id: 'A', paymentId: 'P1', expectedPayment: payment('P1', 10000) }), hasCode('RECORD_CHANGED'));
+    assert.equal(initial.bookings[0].paymentEntries.P1.note, 'latest');
+});
+
+test('advance changes enforce the combined deposit and ledger total, and unknown status safely preserves the ledger', () => {
+    const booking = { ...knownBooking({ advancePayment: { status: 'received', amountCents: 10000 } }), paymentEntries: { P1: payment('P1', 10000) } };
+    assert.throws(() => D.buildAdvancePayment({ status: 'received', amount: '250' }, booking), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    assert.throws(() => D.reduceOperation(bookingRoot(booking), { type: 'advancePayment', id: 'A', expectedAdvancePayment: booking.advancePayment, advancePayment: { status: 'received', amountCents: 25000 } }), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    const unknown = D.reduceOperation(bookingRoot(booking), { type: 'advancePayment', id: 'A', expectedAdvancePayment: booking.advancePayment, advancePayment: { status: 'unknown' } });
+    assert.deepEqual(unknown.bookings[0].paymentEntries, booking.paymentEntries);
+    assert.equal(D.getPaymentSummary(unknown.bookings[0]).recordedCents, 10000);
+    assert.equal(D.getPaymentSummary(unknown.bookings[0]).remainingCents, null);
+    assert.throws(() => D.buildPayment({ id: 'P2', amount: '1' }, unknown.bookings[0]), hasCode('PAYMENT_BASE_UNKNOWN'));
+});
+
+test('an editing operation preserves payments added after the edit form was opened', () => {
+    const original = knownBooking();
+    const edited = D.buildBookingEdit({ guest: 'Новое имя', guestCount: 3, inquirySource: 'referral' }, original);
+    const latest = D.reduceOperation(bookingRoot(original), { type: 'addPayment', id: 'A', payment: payment('NEW', 10000) });
+    const result = D.reduceOperation(latest, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: edited });
+    assert.equal(result.bookings[0].guest, 'Новое имя');
+    assert.equal(result.bookings[0].guestCount, 3);
+    assert.equal(result.bookings[0].inquirySource, 'referral');
+    assert.deepEqual(result.bookings[0].paymentEntries, latest.bookings[0].paymentEntries);
+    assert.equal(result.bookings[0].totalCents, original.totalCents);
+    assert.deepEqual(D.reduceOperation(result, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: edited }), result);
+});
+
+test('editing also preserves a newer deposit and payment-deletion tombstones', () => {
+    const original = { ...knownBooking(), paymentEntries: { OLD: payment('OLD', 10000) } };
+    const edited = D.buildBookingEdit({ notes: 'updated' }, original);
+    let latest = D.reduceOperation(bookingRoot(original), { type: 'removePayment', id: 'A', paymentId: 'OLD', expectedPayment: original.paymentEntries.OLD });
+    latest = D.reduceOperation(latest, { type: 'advancePayment', id: 'A', expectedAdvancePayment: original.advancePayment, advancePayment: { status: 'received', amountCents: 5000 } });
+    const result = D.reduceOperation(latest, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: edited });
+    assert.deepEqual(result.bookings[0].advancePayment, { status: 'received', amountCents: 5000 });
+    assert.deepEqual(result.bookings[0].deletedPaymentIds, { OLD: true });
+    assert.deepEqual(result.bookings[0].paymentEntries, {});
+});
+
+test('two concurrent detail edits conflict rather than silently overwriting each other', () => {
+    const original = knownBooking();
+    const first = D.buildBookingEdit({ guest: 'First' }, original);
+    const second = D.buildBookingEdit({ notes: 'Second' }, original);
+    const committed = D.reduceOperation(bookingRoot(original), { type: 'updateBooking', id: 'A', expectedBooking: original, booking: first });
+    assert.throws(() => D.reduceOperation(committed, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: second }), hasCode('RECORD_CHANGED'));
+    assert.equal(committed.bookings[0].guest, 'First');
+});
+
+test('an edit retry rechecks overlap against bookings created after the form opened', () => {
+    const original = knownBooking();
+    const edited = D.buildBookingEdit({ checkIn: '2027-08-01', checkOut: '2027-08-05' }, original);
+    const latest = D.reduceOperation(bookingRoot(original), { type: 'add', booking: fresh('OTHER', '2027-08-03', '2027-08-06') });
+    assert.throws(() => D.reduceOperation(latest, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: edited }), hasCode('OVERLAP'));
+    assert.equal(latest.bookings[0].checkIn, original.checkIn);
+});
+
+test('lowering agreed total rechecks receipts added after the edit started', () => {
+    const original = knownBooking();
+    const edited = D.buildBookingEdit({ total: '50' }, original);
+    const latest = D.reduceOperation(bookingRoot(original), { type: 'addPayment', id: 'A', payment: payment('NEW', 10000) });
+    assert.throws(() => D.reduceOperation(latest, { type: 'updateBooking', id: 'A', expectedBooking: original, booking: edited }), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    assert.throws(() => D.buildBookingEdit({ total: '50' }, latest.bookings[0]), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    assert.equal(latest.bookings[0].totalCents, 30500);
+});
+
+test('editing and payment operations cannot recreate a deleted booking', () => {
+    const original = knownBooking();
+    const deleted = D.reduceOperation(bookingRoot(original), { type: 'delete', id: 'A', expectedBooking: original });
+    for (const operation of [
+        { type: 'updateBooking', id: 'A', expectedBooking: original, booking: D.buildBookingEdit({ notes: 'new' }, original) },
+        { type: 'addPayment', id: 'A', payment: payment('P1', 100) },
+        { type: 'removePayment', id: 'A', paymentId: 'P1', expectedPayment: payment('P1', 100) }
+    ]) assert.throws(() => D.reduceOperation(deleted, operation), hasCode('DELETED_BOOKING'));
+});
+
+test('imports reject malformed ledger shapes, identifiers, values, dates and tombstones in full', () => {
+    const booking = knownBooking();
+    for (const invalid of [
+        { paymentEntries: [] }, { paymentEntries: null }, { paymentEntries: { P1: payment('P2', 100) } },
+        { paymentEntries: { P1: payment('P1', 0) } }, { paymentEntries: { P1: payment('P1', 1.5) } },
+        { paymentEntries: { P1: payment('P1', '100') } }, { paymentEntries: { P1: payment('P1', 100, { receivedOn: '2027-02-30' }) } },
+        { paymentEntries: { P1: payment('P1', 100, { note: {} }) } }, { deletedPaymentIds: [] },
+        { deletedPaymentIds: { P1: false } }, { paymentEntries: { P1: payment('P1', 100) }, deletedPaymentIds: { P1: true } }
+    ]) assert.throws(() => D.prepareImport({ bookings: [{ ...booking, ...invalid }] }), hasCode('INVALID_PAYMENT'));
+    assert.throws(() => D.prepareImport({ bookings: [{ ...booking, paymentEntries: { P1: payment('P1', 30501) } }] }), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+});
+
+test('all detail, ledger, deletion and unknown metadata fields survive export and fresh import unchanged', () => {
+    const booking = { ...knownBooking({ guestCount: 4, arrivalTime: '16:00', departureTime: '10:00', cleaningStatus: 'scheduled', inquirySource: 'repeat' }),
+        paymentEntries: { P1: payment('P1', 10000, { receivedOn: '2026-11-16', note: 'test' }) }, deletedPaymentIds: { REMOVED: true }, extra: { keep: true } };
+    const exported = D.exportData(bookingRoot(booking));
+    const imported = D.reduceOperation({ bookings: [] }, { type: 'import', bookings: D.prepareImport(exported).bookings });
+    assert.deepEqual(imported.bookings[0], booking);
+    assert.equal(D.getPaymentSummary(imported.bookings[0]).remainingCents, 20500);
+});

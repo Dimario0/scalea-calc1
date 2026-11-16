@@ -21,15 +21,20 @@ function booking(id, start, end, extra = {}) {
 function dom() {
     const elements = new Map();
     const documentListeners = new Map();
-    const controls = ['bookingFields', 'confirmDeleteBtn', 'importDesktop', 'importMobile', 'depositEditor'];
+    const controls = ['bookingFields', 'confirmDeleteBtn', 'importDesktop', 'importMobile', 'depositEditor', 'paymentEditor'];
     const exports = ['exportDesktop', 'exportMobile'];
+    const defaults = {
+        depositStatus: 'unknown', modalDepositStatus: 'unknown',
+        bookingFilter: 'all', bookingSourceFilter: 'all', bookingSort: 'arrival',
+        cleaningStatus: 'unknown', inquirySource: 'unknown'
+    };
     const get = id => {
         if (elements.has(id)) return elements.get(id);
         let classes = new Set(['actionError', 'deleteModalError', 'deleteModal', 'deleteModalChanged', 'dataModalStatus', 'deleteModalStatus', 'loginError', 'appContainer', 'previewBanner'].includes(id) ? ['hidden'] : []);
         let html = '';
         const listeners = new Map();
         const element = {
-            id, value: ['depositStatus', 'modalDepositStatus'].includes(id) ? 'unknown' : '', textContent: '', min: '', max: '', disabled: false,
+            id, value: defaults[id] ?? '', textContent: '', min: '', max: '', disabled: false,
             style: {}, dataset: {}, children: [], tagName: 'DIV', resetCount: 0,
             classList: {
                 add: (...names) => names.forEach(name => classes.add(name)),
@@ -43,14 +48,19 @@ function dom() {
             },
             addEventListener: (name, listener) => listeners.set(name, listener),
             dispatch: (name, event = {}) => listeners.get(name)?.(event),
+            querySelectorAll() { return []; },
+            setAttribute(name, value) { this[name] = String(value); },
+            getAttribute(name) { return this[name] ?? null; },
+            focus() { this.focused = true; }, scrollIntoView() {},
             appendChild(child) { this.children.push(child); },
             click() { this.clicked = true; }, remove() { this.removed = true; },
             reset() {
                 this.resetCount++;
-                const fields = id === 'advancePaymentForm'
-                    ? ['modalDepositStatus', 'modalDepositAmount', 'modalDepositDate']
-                    : ['guestName', 'guestPhone', 'guestNotes', 'checkIn', 'checkOut', 'price', 'depositStatus', 'depositAmount', 'depositDate'];
-                fields.forEach(name => { get(name).value = name.endsWith('Status') ? 'unknown' : ''; });
+                const fields = id === 'advancePaymentForm' ? ['modalDepositStatus', 'modalDepositAmount', 'modalDepositDate']
+                    : id === 'paymentForm' ? ['paymentAmount', 'paymentDate', 'paymentNote']
+                    : ['guestName', 'guestPhone', 'guestNotes', 'checkIn', 'checkOut', 'price', 'depositStatus', 'depositAmount', 'depositDate',
+                        'guestCount', 'arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource', 'agreedTotal'];
+                fields.forEach(name => { get(name).value = defaults[name] ?? ''; });
             }
         };
         Object.defineProperty(element, 'className', { get: () => [...classes].join(' '), set: value => { classes = new Set(value.split(/\s+/).filter(Boolean)); } });
@@ -155,6 +165,21 @@ class World {
             c.get(ids[2]).dispatch('input');
         };
         c.saveAdvance = () => c.get('advancePaymentForm').onsubmit({ preventDefault() {} });
+        c.setPayment = (amount, receivedOn = '', note = '') => {
+            c.get('paymentAmount').value = amount;
+            c.get('paymentDate').value = receivedOn;
+            c.get('paymentNote').value = note;
+            ['paymentAmount', 'paymentDate', 'paymentNote'].forEach(id => c.get(id).dispatch('input'));
+        };
+        c.savePayment = () => c.get('paymentForm').onsubmit({ preventDefault() {} });
+        c.edit = id => { c.context.openDeleteModal(id); c.context.editSelectedBooking(); };
+        c.filter = (id, value) => { c.get(id).value = value; c.get(id).dispatch(id === 'bookingSearch' ? 'input' : 'change'); };
+        c.listHTML = () => c.get('bookingList').innerHTML;
+        c.currentAdvance = () => {
+            const match = c.get('deleteModalInfo').innerHTML.match(/<div id="modalCurrentAdvance" class="([^"]*)">([^<]*)<\/div>/);
+            assert.ok(match, 'The rendered booking card must contain its saved advance status');
+            return { className: match[1], textContent: match[2] };
+        };
         c.import = value => {
             const input = { value: 'selected', files: [{ size: 100, text: async () => JSON.stringify(value) }] };
             return c.context.uploadBackup(input);
@@ -432,7 +457,7 @@ test('new received advance is included in the accommodation total and resets onl
     const receivedOn = D.todayStr();
     c.fill('2027-02-01', '2027-02-06', 60);
     c.setAdvance('new', 'received', '150', receivedOn);
-    assert.match(c.get('depositSummary').textContent, /Остаток после залога: 150 €/);
+    assert.match(c.get('depositSummary').textContent, /Остаток[^:]*: 150 €/);
     const pending = c.submit();
     assert.equal(c.get('depositStatus').value, 'received');
     assert.equal(c.get('depositAmount').value, '150');
@@ -487,7 +512,7 @@ test('advance editor updates a historical booking without changing its agreed pr
     assert.equal(c.get('modalDepositStatus').value, 'received');
     assert.equal(Number(c.get('modalDepositAmount').value), 100);
     assert.equal(c.get('modalDepositDate').value, D.todayStr());
-    assert.match(c.get('modalDepositSummary').textContent, /Остаток после залога: 153 €/);
+    assert.match(c.get('modalDepositSummary').textContent, /Остаток[^:]*: 153 €/);
 });
 
 test('two stale advance edits conflict instead of silently overwriting the first phone', async () => {
@@ -514,7 +539,7 @@ test('an untouched open card refreshes its payment fields from the other phone',
     assert.equal(b.get('modalDepositStatus').value, 'received');
     assert.equal(Number(b.get('modalDepositAmount').value), 100);
     assert.equal(b.get('modalDepositDate').value, D.todayStr());
-    assert.match(b.get('modalDepositSummary').textContent, /Остаток после залога: 200 €/);
+    assert.match(b.get('modalDepositSummary').textContent, /Остаток[^:]*: 200 €/);
     assert.equal(b.get('deleteModalChanged').classList.contains('hidden'), true);
     assert.equal(b.transactions.length, 0, 'Refreshing an open card must remain read-only');
     // A subsequent edit must compare against the refreshed payment, not the old
@@ -535,8 +560,8 @@ test('an edited open card keeps its draft, shows the new server payment and reje
     assert.equal(b.get('modalDepositStatus').value, 'received');
     assert.equal(b.get('modalDepositAmount').value, '150');
     assert.equal(b.get('modalDepositDate').value, D.todayStr());
-    assert.match(b.get('modalDepositSummary').textContent, /Остаток после залога: 150 €/);
-    assert.match(b.get('modalCurrentAdvance').textContent, /Залог получен · 100 €/);
+    assert.match(b.get('modalDepositSummary').textContent, /Остаток[^:]*: 150 €/);
+    assert.match(b.currentAdvance().textContent, /Залог получен · 100 €/);
     assert.equal(b.get('deleteModalChanged').classList.contains('hidden'), false);
     await b.saveAdvance();
     assert.equal(w.data.bookings[0].advancePayment.amountCents, 10000);
@@ -554,19 +579,19 @@ test('a dirty card follows a remote payment change back to its original unknown 
     b.setAdvance('modal', 'received', '150', D.todayStr());
     a.setAdvance('modal', 'received', '100');
     const received = a.saveAdvance(); w.commit(a); await received;
-    assert.match(b.get('modalCurrentAdvance').textContent, /Залог получен · 100 €/);
-    assert.match(b.get('modalCurrentAdvance').className, /bg-emerald-50/);
+    assert.match(b.currentAdvance().textContent, /Залог получен · 100 €/);
+    assert.match(b.currentAdvance().className, /bg-emerald-50/);
     assert.equal(b.get('deleteModalChanged').classList.contains('hidden'), false);
     a.setAdvance('modal', 'unknown');
     const unknown = a.saveAdvance(); w.commit(a); await unknown;
-    assert.equal(b.get('modalCurrentAdvance').textContent, 'Залог: не отмечено');
-    assert.match(b.get('modalCurrentAdvance').className, /bg-slate-50/);
-    assert.doesNotMatch(b.get('modalCurrentAdvance').className, /emerald/);
+    assert.equal(b.currentAdvance().textContent, 'Залог: не отмечено');
+    assert.match(b.currentAdvance().className, /bg-slate-50/);
+    assert.doesNotMatch(b.currentAdvance().className, /emerald/);
     assert.equal(b.get('deleteModalChanged').classList.contains('hidden'), true);
     assert.equal(b.get('modalDepositStatus').value, 'received');
     assert.equal(b.get('modalDepositAmount').value, '150');
     assert.equal(b.get('modalDepositDate').value, D.todayStr());
-    assert.match(b.get('modalDepositSummary').textContent, /Остаток после залога: 150 €/);
+    assert.match(b.get('modalDepositSummary').textContent, /Остаток[^:]*: 150 €/);
     assert.equal(b.transactions.length, 0);
 });
 
@@ -582,8 +607,8 @@ test('a rejected pending advance edit refreshes the saved badge from the latest 
     assert.equal(b.get('modalDepositAmount').value, '150');
     w.reject(b); await pendingB;
     assert.equal(w.data.bookings[0].advancePayment.amountCents, 10000);
-    assert.match(b.get('modalCurrentAdvance').textContent, /Залог получен · 100 €/);
-    assert.match(b.get('modalCurrentAdvance').className, /bg-emerald-50/);
+    assert.match(b.currentAdvance().textContent, /Залог получен · 100 €/);
+    assert.match(b.currentAdvance().className, /bg-emerald-50/);
     assert.equal(b.get('deleteModalChanged').classList.contains('hidden'), false);
     assert.equal(b.get('modalDepositStatus').value, 'received');
     assert.equal(b.get('modalDepositAmount').value, '150');
@@ -675,4 +700,269 @@ test('a booking continuing into the first day of a month keeps its name and a se
     assert.match(bar.innerHTML, /<span class="shrink-0 pl-1"[^>]*>✓<\/span><span class="truncate px-1">/);
     assert.match(bar.title, /Залог получен · 100 €/);
     assert.equal(c.transactions.length, 0);
+});
+
+test('booking list search, payment filters, sources and ordering are read-only', () => {
+    const records = [
+        booking('first', '2027-01-04', '2027-01-06', { guest: 'Zulu guest', inquirySource: 'website', advancePayment: { status: 'not_received' } }),
+        booking('second', '2027-01-07', '2027-01-12', { guest: 'Alpha guest', inquirySource: 'social', advancePayment: { status: 'received', amountCents: 6000 } }),
+        booking('third', '2027-01-13', '2027-01-16', { guest: 'Mike guest', inquirySource: 'referral', advancePayment: { status: 'received', amountCents: 18000 } }),
+        booking('legacy', '2027-01-17', '2027-01-21', { guest: 'Unknown guest' })
+    ];
+    const w = new World({ bookings: records }), c = w.client('A');
+    const contains = name => assert.match(c.listHTML(), new RegExp(name));
+    const excludes = name => assert.doesNotMatch(c.listHTML(), new RegExp(name));
+    const ordered = names => {
+        const positions = names.map(name => c.listHTML().indexOf(name));
+        positions.forEach(position => assert.ok(position >= 0));
+        positions.slice(1).forEach((position, index) => assert.ok(position > positions[index], `${names.join(' → ')} must be ordered`));
+    };
+    ordered(['Zulu guest', 'Alpha guest', 'Mike guest', 'Unknown guest']);
+    c.filter('bookingSearch', 'aLpHa'); contains('Alpha guest'); excludes('Zulu guest'); excludes('Mike guest');
+    c.filter('bookingSearch', '');
+    c.filter('bookingFilter', 'deposit'); contains('Zulu guest'); excludes('Alpha guest'); excludes('Unknown guest');
+    c.filter('bookingFilter', 'balance'); contains('Zulu guest'); contains('Alpha guest'); excludes('Mike guest'); excludes('Unknown guest');
+    c.filter('bookingFilter', 'paid'); contains('Mike guest'); excludes('Zulu guest'); excludes('Unknown guest');
+    c.filter('bookingFilter', 'unknown'); contains('Unknown guest'); excludes('Zulu guest'); excludes('Alpha guest');
+    c.filter('bookingFilter', 'all'); c.filter('bookingSourceFilter', 'website'); contains('Zulu guest'); excludes('Alpha guest');
+    c.filter('bookingSourceFilter', 'unknown'); contains('Unknown guest'); excludes('Zulu guest');
+    c.filter('bookingSourceFilter', 'all'); c.filter('bookingSort', 'balance'); ordered(['Alpha guest', 'Zulu guest']);
+    c.filter('bookingSort', 'total'); ordered(['Alpha guest', 'Unknown guest', 'Mike guest', 'Zulu guest']);
+    c.filter('bookingSort', 'guest'); ordered(['Alpha guest', 'Mike guest', 'Unknown guest', 'Zulu guest']);
+    assert.equal(c.transactions.length, 0);
+    assert.deepEqual(w.data.bookings, records);
+});
+
+test('upcoming filter separates future arrivals from past stays using calendar dates', () => {
+    const today = D.todayStr();
+    const records = [
+        booking('past', D.addDays(today, -5), D.addDays(today, -3), { guest: 'PAST GUEST' }),
+        booking('soon', D.addDays(today, 2), D.addDays(today, 4), { guest: 'SOON GUEST' }),
+        booking('later', D.addDays(today, 8), D.addDays(today, 10), { guest: 'LATER GUEST' })
+    ];
+    const w = new World({ bookings: records }), c = w.client('A');
+    c.filter('bookingFilter', 'upcoming');
+    assert.doesNotMatch(c.listHTML(), /PAST GUEST/);
+    assert.match(c.listHTML(), /SOON GUEST/); assert.match(c.listHTML(), /LATER GUEST/);
+    assert.ok(c.listHTML().indexOf('SOON GUEST') < c.listHTML().indexOf('LATER GUEST'));
+    assert.equal(c.transactions.length, 0);
+});
+
+test('editing dates preserves the agreed total until the explicit recalculation action', async () => {
+    const old = booking('edit', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' }, custom: { retained: true } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.edit('edit');
+    assert.equal(Number(c.get('agreedTotal').value), 300);
+    c.get('checkOut').value = '2027-02-07'; c.get('checkOut').dispatch('change');
+    c.get('guestName').value = 'EDITED GUEST'; c.get('guestNotes').value = 'EDITED NOTE';
+    assert.equal(Number(c.get('agreedTotal').value), 300);
+    const first = c.submit(); w.commit(c); await first;
+    assert.equal(w.data.bookings.length, 1);
+    assert.equal(w.data.bookings[0].checkOut, '2027-02-07');
+    assert.equal(D.getBookingTotalCents(w.data.bookings[0]), 30000);
+    assert.equal(w.data.bookings[0].guest, 'EDITED GUEST');
+    assert.deepEqual(w.data.bookings[0].custom, { retained: true });
+    c.edit('edit'); c.get('recalculateBooking').onclick();
+    assert.equal(Number(c.get('agreedTotal').value), 360);
+    const second = c.submit(); w.commit(c); await second;
+    assert.equal(D.getBookingTotalCents(w.data.bookings[0]), 36000);
+});
+
+test('a conflicting date edit is rejected without clearing the draft and can be cancelled', async () => {
+    const old = booking('edit', '2027-02-01', '2027-02-03', { advancePayment: { status: 'not_received' } });
+    const occupied = booking('occupied', '2027-02-05', '2027-02-07');
+    const w = new World({ bookings: [old, occupied] }), c = w.client('A');
+    c.edit('edit'); c.get('checkOut').value = '2027-02-06'; c.get('checkOut').dispatch('change');
+    c.get('guestName').value = 'PRESERVED EDIT'; c.get('guestNotes').value = 'PRESERVED NOTE';
+    await c.submit();
+    assert.deepEqual(w.data.bookings, [old, occupied]);
+    assert.equal(c.get('checkOut').value, '2027-02-06');
+    assert.equal(c.get('guestName').value, 'PRESERVED EDIT');
+    assert.equal(c.get('guestNotes').value, 'PRESERVED NOTE');
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    assert.match(c.get('actionError').textContent, /занят/);
+    const attempts = c.transactions.length;
+    c.context.cancelBookingEdit();
+    assert.equal(c.get('guestName').value, ''); assert.equal(c.get('checkIn').value, '');
+    assert.equal(c.transactions.length, attempts);
+});
+
+test('optional stay details survive creation, editing and export', async () => {
+    const w = new World(), c = w.client('A');
+    c.fill('2027-03-01', '2027-03-05', 60, 'DETAIL GUEST');
+    const fields = { guestCount: '4', arrivalTime: '15:30', departureTime: '10:00', cleaningStatus: 'scheduled', inquirySource: 'social' };
+    for (const [id, value] of Object.entries(fields)) c.get(id).value = value;
+    const first = c.submit(); w.commit(c); await first;
+    const record = w.data.bookings[0];
+    assert.equal(record.guestCount, 4);
+    for (const id of ['arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource']) assert.equal(record[id], fields[id]);
+    c.edit(record.id);
+    assert.equal(Number(c.get('guestCount').value), 4);
+    for (const id of ['arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource']) assert.equal(c.get(id).value, fields[id]);
+    c.get('cleaningStatus').value = 'ready';
+    const second = c.submit(); w.commit(c); await second;
+    const exported = (await c.export()).bookings[0];
+    assert.equal(exported.cleaningStatus, 'ready'); assert.equal(exported.inquirySource, 'social');
+    assert.equal(exported.guestCount, 4); assert.equal(exported.arrivalTime, '15:30'); assert.equal(exported.departureTime, '10:00');
+});
+
+test('a detail edit and a payment on two phones preserve both changes in either commit order', async () => {
+    for (const order of ['edit-first', 'payment-first']) {
+        const old = booking('edit', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' }, custom: { retained: true } });
+        const w = new World({ bookings: [old] }), a = w.client('A'), b = w.client('B');
+        a.edit('edit'); a.get('guestName').value = 'EDITED CONCURRENT'; a.get('guestNotes').value = 'DETAILS RETAINED';
+        b.context.openDeleteModal('edit'); b.setPayment('100', D.todayStr(), 'SYNTHETIC PAYMENT');
+        const edit = a.submit(), payment = b.savePayment();
+        assert.equal(w.pending.length, 2);
+        if (order === 'edit-first') { w.commit(a); w.commit(b); } else { w.commit(b); w.commit(a); }
+        await Promise.all([edit, payment]);
+        const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+        assert.equal(saved.guest, 'EDITED CONCURRENT'); assert.equal(saved.notes, 'DETAILS RETAINED');
+        assert.equal(D.getBookingTotalCents(saved), 30000);
+        assert.equal(summary.receivedCents, 10000); assert.equal(summary.remainingCents, 20000);
+        assert.equal(summary.entries.length, 1); assert.equal(summary.entries[0].note, 'SYNTHETIC PAYMENT');
+        assert.deepEqual(saved.custom, { retained: true });
+    }
+});
+
+test('an open edit can lower the total after another phone removes a payment without restoring it', async () => {
+    const old = booking('edit', '2027-02-01', '2027-02-06', {
+        advancePayment: { status: 'received', amountCents: 10000 },
+        paymentEntries: { removed: { id: 'removed', amountCents: 10000, note: 'CORRECTION' } },
+        custom: { retained: true }
+    });
+    const w = new World({ bookings: [old] }), a = w.client('A'), b = w.client('B');
+    b.edit('edit'); b.get('guestName').value = 'PRESERVED EDIT DRAFT';
+    a.context.openDeleteModal('edit');
+    const removal = a.context.removeBookingPayment('removed'); w.commit(a); await removal;
+    assert.equal(b.get('guestName').value, 'PRESERVED EDIT DRAFT');
+    assert.equal(D.getPaymentSummary(w.data.bookings[0]).receivedCents, 10000);
+    b.get('agreedTotal').value = '150'; b.get('agreedTotal').dispatch('input');
+    assert.equal(b.get('liveTotal').textContent, D.formatMoney(15000));
+    const edit = b.submit();
+    assert.equal(w.pending.length, 1, 'The latest smaller received total permits the edit');
+    w.commit(b); await edit;
+    const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+    assert.equal(saved.guest, 'PRESERVED EDIT DRAFT');
+    assert.equal(D.getBookingTotalCents(saved), 15000);
+    assert.deepEqual(saved.advancePayment, old.advancePayment);
+    assert.deepEqual(saved.paymentEntries, {});
+    assert.equal(saved.deletedPaymentIds.removed, true);
+    assert.equal(summary.receivedCents, 10000); assert.equal(summary.remainingCents, 5000);
+    assert.deepEqual(saved.custom, old.custom);
+});
+
+test('lowering the total respects a new payment before submission and during transaction retry', async () => {
+    for (const order of ['payment-before-submit', 'payment-during-save']) {
+        const old = booking('edit', '2027-02-01', '2027-02-06', { advancePayment: { status: 'received', amountCents: 10000 } });
+        const w = new World({ bookings: [old] }), a = w.client('A'), b = w.client('B');
+        b.edit('edit'); b.get('guestName').value = 'KEEP LOWER-TOTAL DRAFT';
+        b.get('agreedTotal').value = '150'; b.get('agreedTotal').dispatch('input');
+        a.context.openDeleteModal('edit'); a.setPayment('100', '', 'NEW PAYMENT');
+        const payment = a.savePayment();
+        let edit;
+        if (order === 'payment-during-save') edit = b.submit();
+        w.commit(a); await payment;
+        if (order === 'payment-before-submit') {
+            await b.submit();
+            assert.equal(b.transactions.length, 0, 'A known excessive decrease is blocked before writing');
+        } else {
+            w.commit(b); await edit;
+            assert.equal(b.transactions.length, 1, 'The transaction retry rechecks newer receipts');
+        }
+        assert.equal(D.getBookingTotalCents(w.data.bookings[0]), 30000);
+        assert.equal(D.getPaymentSummary(w.data.bookings[0]).receivedCents, 20000);
+        assert.equal(w.data.bookings[0].guest, old.guest);
+        assert.equal(b.get('agreedTotal').value, '150');
+        assert.equal(b.get('guestName').value, 'KEEP LOWER-TOTAL DRAFT');
+        assert.equal(b.get('actionError').classList.contains('hidden'), false);
+        assert.match(b.get('actionError').textContent, /оплаты.*превышать/i);
+        b.get('agreedTotal').value = '250'; b.get('agreedTotal').dispatch('input');
+        const retry = b.submit(); w.commit(b); await retry;
+        const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+        assert.equal(saved.guest, 'KEEP LOWER-TOTAL DRAFT');
+        assert.equal(D.getBookingTotalCents(saved), 25000);
+        assert.equal(summary.receivedCents, 20000); assert.equal(summary.remainingCents, 5000);
+        assert.equal(summary.entries.length, 1); assert.equal(summary.entries[0].note, 'NEW PAYMENT');
+    }
+});
+
+test('final payment is bounded by the balance, waits for ACK and marks the booking fully paid', async () => {
+    const old = booking('payment', '2027-02-01', '2027-02-06', { guest: 'FINAL PAYMENT GUEST', advancePayment: { status: 'received', amountCents: 15000 } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.context.openDeleteModal('payment'); c.setPayment('151'); await c.savePayment();
+    assert.equal(c.transactions.length, 0);
+    assert.equal(c.get('paymentAmount').value, '151');
+    assert.equal(c.get('deleteModalError').classList.contains('hidden'), false);
+    c.setPayment('150', D.todayStr(), 'FINAL SYNTHETIC PAYMENT');
+    const pending = c.savePayment(); w.commit(c, { holdAck: true }); await flush();
+    assert.equal(c.get('paymentAmount').value, '150');
+    assert.equal(c.get('paymentNote').value, 'FINAL SYNTHETIC PAYMENT');
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    w.acknowledge(); await pending;
+    const summary = D.getPaymentSummary(w.data.bookings[0]);
+    assert.equal(summary.receivedCents, 30000); assert.equal(summary.remainingCents, 0); assert.equal(summary.fullyPaid, true);
+    assert.equal(c.get('paymentAmount').value, ''); assert.equal(c.get('paymentNote').value, '');
+    c.filter('bookingFilter', 'paid'); assert.match(c.listHTML(), /FINAL PAYMENT GUEST/);
+});
+
+test('a rejected payment retains amount, date and note for a successful retry', async () => {
+    const old = booking('payment', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.context.openDeleteModal('payment'); c.setPayment('50', D.todayStr(), 'KEEP PAYMENT NOTE');
+    const first = c.savePayment(); w.reject(c); await first;
+    assert.equal(c.get('paymentAmount').value, '50');
+    assert.equal(c.get('paymentDate').value, D.todayStr());
+    assert.equal(c.get('paymentNote').value, 'KEEP PAYMENT NOTE');
+    assert.equal(c.get('syncBanner').dataset.kind, 'error');
+    assert.equal(c.get('paymentEditor').disabled, false);
+    assert.deepEqual(w.data.bookings[0], old);
+    const retry = c.savePayment(); w.commit(c); await retry;
+    const summary = D.getPaymentSummary(w.data.bookings[0]);
+    assert.equal(summary.entries.length, 1); assert.equal(summary.receivedCents, 5000);
+    assert.equal(c.get('paymentAmount').value, ''); assert.equal(c.get('paymentDate').value, ''); assert.equal(c.get('paymentNote').value, '');
+});
+
+test('removing one ledger payment preserves the deposit and all other payments', async () => {
+    const old = booking('payment', '2027-02-01', '2027-02-06', { advancePayment: { status: 'received', amountCents: 10000 } });
+    let seed = { bookings: [old] };
+    seed = D.reduceOperation(seed, { type: 'addPayment', id: old.id, payment: D.buildPayment({ id: 'first-payment', amount: '50', note: 'REMOVE THIS' }, seed.bookings[0]) });
+    seed = D.reduceOperation(seed, { type: 'addPayment', id: old.id, payment: D.buildPayment({ id: 'second-payment', amount: '25', note: 'KEEP THIS' }, seed.bookings[0]) });
+    const w = new World(seed), c = w.client('A');
+    c.context.openDeleteModal('payment');
+    const removal = c.context.removeBookingPayment('first-payment'); w.commit(c); await removal;
+    const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+    assert.deepEqual(saved.advancePayment, old.advancePayment);
+    assert.equal(summary.entries.length, 1); assert.equal(summary.entries[0].id, 'second-payment'); assert.equal(summary.entries[0].note, 'KEEP THIS');
+    assert.equal(saved.deletedPaymentIds['first-payment'], true);
+    assert.equal(summary.receivedCents, 12500); assert.equal(summary.remainingCents, 17500);
+    assert.equal(D.getBookingTotalCents(saved), 30000);
+});
+
+test('payment editor blocks offline writes and preserves a pending draft across reconnection', async () => {
+    const old = booking('payment', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.context.openDeleteModal('payment'); c.setPayment('70', '', 'OFFLINE DRAFT');
+    c.connect(false); assert.equal(c.get('paymentEditor').disabled, true);
+    await c.savePayment(); assert.equal(c.transactions.length, 0);
+    c.connect(true); assert.equal(c.get('paymentEditor').disabled, false);
+    const pending = c.savePayment(); c.connect(false); await flush();
+    assert.equal(c.get('paymentAmount').value, '70'); assert.equal(c.get('paymentNote').value, 'OFFLINE DRAFT');
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving'); assert.equal(c.get('paymentEditor').disabled, true);
+    c.connect(true); w.commit(c); await pending;
+    assert.equal(D.getPaymentSummary(w.data.bookings[0]).receivedCents, 7000);
+    assert.equal(c.get('paymentAmount').value, '');
+});
+
+test('unknown historical payment state is never treated as a debt or allowed to accept unexplained payments', async () => {
+    const old = booking('unknown', '2026-01-01', '2026-01-05', { guest: 'UNKNOWN LEGACY GUEST', price: 63.25 });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.context.openDeleteModal('unknown');
+    assert.equal(D.getPaymentSummary(old).known, false);
+    assert.equal(D.getPaymentSummary(old).remainingCents, null);
+    assert.equal(c.get('paymentEditor').disabled, true);
+    c.setPayment('100'); await c.savePayment();
+    assert.equal(c.transactions.length, 0); assert.deepEqual(w.data.bookings[0], old);
+    c.filter('bookingFilter', 'balance'); assert.doesNotMatch(c.listHTML(), /UNKNOWN LEGACY GUEST/);
+    c.filter('bookingFilter', 'unknown'); assert.match(c.listHTML(), /UNKNOWN LEGACY GUEST/);
 });

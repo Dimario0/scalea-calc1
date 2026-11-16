@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-ALLOWED = {"preview.html", "app.js", "data.js", "preview-store.js", "web_ready_bg.jpg"}
+ALLOWED = {"preview.html", "app.js", "data.js", "preview-store.js", "web_ready_bg.jpg", "ui.css"}
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):
