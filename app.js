@@ -594,21 +594,68 @@
         try {
             firebase.initializeApp(firebaseConfig);
             auth = firebase.auth();
+            let authBusy = false;
+            const recoveryStatus = $('loginRecoveryStatus'), recoveryButton = $('resetPasswordBtn'), submitButton = $('loginSubmitBtn');
+            function setAuthBusy(busy, recovering = false) {
+                authBusy = busy;
+                [submitButton, recoveryButton, $('emailInput'), $('passwordInput')].forEach(element => { if (element) element.disabled = busy; });
+                if (recoveryButton) recoveryButton.textContent = busy && recovering ? 'Отправляем…' : 'Забыли пароль?';
+                if (submitButton) submitButton.textContent = busy && !recovering ? 'Входим…' : 'Войти';
+            }
+            function showRecoveryNotice() {
+                if (!recoveryStatus) return;
+                recoveryStatus.textContent = 'Если для этой почты есть учётная запись, вы получите письмо с инструкцией. Проверьте входящие и папку «Спам». Затем вернитесь сюда и войдите с новым паролем.';
+                recoveryStatus.classList.remove('hidden');
+            }
+            setAuthBusy(false);
             auth.onAuthStateChanged(user => {
                 generation++;
                 if (adapter) adapter.dispose();
                 adapter = null; loaded = false; online = false; saving = false; readError = false; writeError = false;
                 state.data = { bookings: [] }; state.selectedBooking = null; resetForm(); clearError();
                 $('deleteModal').classList.add('hidden'); render(); renderSync();
+                recoveryStatus?.classList.add('hidden');
                 $('loginScreen').classList.toggle('hidden', Boolean(user)); $('appContainer').classList.toggle('hidden', !user);
                 if (user) adapter = firebaseAdapter(generation);
             });
             $('loginForm').onsubmit = async event => {
                 event.preventDefault();
+                if (authBusy) return;
+                setAuthBusy(true);
+                recoveryStatus?.classList.add('hidden');
                 try { await auth.signInWithEmailAndPassword($('emailInput').value.trim(), $('passwordInput').value); $('loginError').classList.add('hidden'); $('passwordInput').value = ''; }
                 catch { $('loginError').textContent = 'Не удалось войти. Проверьте данные и соединение.'; $('loginError').classList.remove('hidden'); }
+                finally { setAuthBusy(false); }
             };
+            if (recoveryButton) recoveryButton.onclick = async () => {
+                if (authBusy) return;
+                $('loginError').classList.add('hidden');
+                recoveryStatus?.classList.add('hidden');
+                const email = $('emailInput').value.trim();
+                if (!email || !$('emailInput').checkValidity()) {
+                    $('loginError').textContent = 'Введите вашу электронную почту в поле выше, чтобы восстановить доступ.';
+                    $('loginError').classList.remove('hidden'); $('emailInput').focus(); return;
+                }
+                setAuthBusy(true, true);
+                try {
+                    await auth.sendPasswordResetEmail(email);
+                    showRecoveryNotice();
+                } catch (error) {
+                    if (['auth/user-not-found', 'auth/user-disabled'].includes(error?.code)) showRecoveryNotice();
+                    else {
+                        $('loginError').textContent = error?.code === 'auth/invalid-email' ? 'Проверьте адрес электронной почты в поле выше.'
+                            : error?.code === 'auth/too-many-requests' ? 'Слишком много попыток. Подождите немного и повторите восстановление.'
+                            : error?.code === 'auth/network-request-failed' ? 'Не удалось отправить запрос. Проверьте интернет и попробуйте снова.'
+                            : 'Не удалось запросить восстановление доступа. Попробуйте ещё раз позже.';
+                        $('loginError').classList.remove('hidden');
+                    }
+                } finally { setAuthBusy(false); }
+            };
+            $('emailInput').addEventListener('input', () => {
+                if (!authBusy) { recoveryStatus?.classList.add('hidden'); $('loginError').classList.add('hidden'); }
+            });
         } catch {
+            ['loginSubmitBtn', 'resetPasswordBtn'].forEach(id => { if ($(id)) $(id).disabled = true; });
             $('loginError').textContent = 'Не удалось загрузить сервис входа. Проверьте интернет и обновите страницу.';
             $('loginError').classList.remove('hidden');
         }
