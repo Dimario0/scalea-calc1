@@ -604,7 +604,132 @@ test('an explicitly changed agreed total is allocated in integer cents with a de
     assert.equal(tiny.price, 0);
     assert.deepEqual(tiny.nightlyRates.map(rate => rate.cents), [1, 0, 0]);
     assert.equal(D.getBookingTotalCents(tiny), 1);
-    for (const total of ['0', '-1', '1.005', 'bad', null]) assert.throws(() => D.buildBookingEdit({ total }, knownBooking()), hasCode('INVALID_TOTAL'));
+    for (const total of ['-1', '1.005', 'bad', null]) assert.throws(() => D.buildBookingEdit({ total }, knownBooking()), hasCode('INVALID_TOTAL'));
+});
+
+test('an explicit zero total makes a complimentary stay without changing its dates, details or metadata', () => {
+    for (const advancePayment of [undefined, { status: 'unknown' }, { status: 'not_received' }]) {
+        const original = legacy('FREE', '2027-06-30', '2027-07-03', 100, { guestCount: 3, notes: 'complimentary agreement', extra: { retained: true }, deletedPaymentIds: { REMOVED: true } });
+        if (advancePayment) original.advancePayment = advancePayment;
+        const before = clone(original);
+        const edited = D.buildBookingEdit({ total: '0' }, original);
+        assert.equal(edited.price, 0);
+        assert.equal(edited.totalCents, 0);
+        assert.deepEqual(edited.nightlyRates, [
+            { date: '2027-06-30', cents: 0 }, { date: '2027-07-01', cents: 0 }, { date: '2027-07-02', cents: 0 }
+        ]);
+        for (const key of Object.keys(original).filter(key => key !== 'price')) assert.deepEqual(edited[key], original[key], key);
+        assert.equal(Object.hasOwn(edited, 'advancePayment'), Object.hasOwn(original, 'advancePayment'));
+        assert.equal(D.getNights(edited.checkIn, edited.checkOut), 3, 'Complimentary nights still occupy the calendar');
+        assert.deepEqual(D.getPaymentSummary(edited), { known: true, receivedCents: 0, remainingCents: 0, recordedCents: 0, fullyPaid: true, entries: [] });
+        assert.deepEqual(original, before);
+    }
+});
+
+test('zero euro spellings and a legacy rounded-zero total produce an explicit zero breakdown', () => {
+    const original = legacy('TINY', '2026-06-30', '2026-07-03', 0.001);
+    assert.equal(D.getBookingTotalCents(original), 0);
+    assert.equal(D.getPaymentSummary(original).known, false, 'Historical rounding to zero alone is not an explicit complimentary agreement');
+    const receivedUnknown = { ...original, advancePayment: { status: 'received' } };
+    assert.deepEqual(D.normalizeData({ bookings: [receivedUnknown] }).bookings[0], receivedUnknown);
+    assert.equal(D.getPaymentSummary(receivedUnknown).known, false);
+    assert.throws(() => D.buildBookingEdit({ total: '0' }, receivedUnknown), hasCode('INVALID_ADVANCE_PAYMENT'));
+    for (const total of ['0', '0.00', '0,00', ' 000.0 ']) {
+        const edited = D.buildBookingEdit({ total }, original);
+        assert.equal(edited.price, 0);
+        assert.equal(edited.totalCents, 0);
+        assert.deepEqual(edited.nightlyRates.map(rate => rate.cents), [0, 0, 0]);
+    }
+    assert.equal(original.price, 0.001);
+    assert.ok(!Object.hasOwn(original, 'totalCents'));
+});
+
+test('complimentary stays survive export/import and contribute no debt or unknown payment amount to month summaries', () => {
+    const original = D.buildBookingEdit({ total: '0' }, legacy('FREE', '2026-12-31', '2027-01-03', 60, { extra: { retained: true } }));
+    const initial = bookingRoot(original);
+    const restored = D.reduceOperation({ bookings: [] }, { type: 'import', bookings: D.prepareImport(JSON.parse(JSON.stringify(D.exportData(initial)))).bookings });
+    assert.deepEqual(restored.bookings, initial.bookings);
+    const summary = D.getPaymentSummary(restored.bookings[0]);
+    assert.equal(summary.known ? 0 : 1, 0, 'An unknown advance field does not make a free stay an unknown balance');
+    assert.equal(summary.recordedCents, 0);
+    assert.equal(summary.remainingCents, 0);
+    assert.equal(D.getNightCents(restored.bookings[0], '2026-12-31'), 0);
+    assert.equal(D.getNightCents(restored.bookings[0], '2027-01-01'), 0);
+    assert.equal(D.getNightCents(restored.bookings[0], '2027-01-02'), 0);
+    assert.equal(D.getNightCents(restored.bookings[0], '2027-01-03'), 0);
+    assert.deepEqual(D.normalizeData(initial), initial);
+});
+
+test('a complimentary stay can move dates or return to a positive agreement without inventing receipts', () => {
+    const original = knownBooking({ extra: { retained: true } });
+    const free = D.buildBookingEdit({ total: '0' }, original);
+    const moved = D.buildBookingEdit({ checkIn: '2028-01-31', checkOut: '2028-02-03', total: '' }, free);
+    assert.equal(moved.totalCents, 0);
+    assert.deepEqual(moved.nightlyRates.map(rate => rate.cents), [0, 0, 0]);
+    const restored = D.buildBookingEdit({ total: '400.00' }, moved);
+    assert.equal(restored.totalCents, 40000);
+    assert.equal(restored.price, 133.33);
+    assert.deepEqual(restored.nightlyRates.map(rate => rate.cents), [13334, 13333, 13333]);
+    assert.deepEqual(restored.extra, original.extra);
+    assert.deepEqual(D.getPaymentSummary(restored), { known: true, receivedCents: 0, remainingCents: 40000, recordedCents: 0, fullyPaid: false, entries: [] });
+    const unknownBase = D.buildBookingEdit({ total: '0' }, fresh());
+    assert.equal(D.getPaymentSummary(D.buildBookingEdit({ total: '400' }, unknownBase)).known, false, 'Returning to a paid agreement must retain the unknown receipt history');
+});
+
+test('complimentary editing never discards known receipts or assumes an unknown received advance was zero', () => {
+    for (const advancePayment of [{ status: 'received' }, { status: 'received', receivedOn: '2026-11-16' }]) {
+        const original = knownBooking({ advancePayment });
+        const before = clone(original);
+        assert.throws(() => D.buildBookingEdit({ total: '0' }, original), hasCode('INVALID_ADVANCE_PAYMENT'));
+        assert.deepEqual(original, before);
+    }
+    const deposited = knownBooking({ advancePayment: { status: 'received', amountCents: 1 } });
+    assert.throws(() => D.buildBookingEdit({ total: '0' }, deposited), hasCode('ADVANCE_EXCEEDS_TOTAL'));
+    const paid = { ...knownBooking(), paymentEntries: { P1: payment('P1', 1) } };
+    assert.throws(() => D.buildBookingEdit({ total: '0' }, paid), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    const free = D.buildBookingEdit({ total: '0' }, knownBooking());
+    assert.throws(() => D.prepareImport({ bookings: [{ ...free, advancePayment: { status: 'received' } }] }), hasCode('INVALID_ADVANCE_PAYMENT'));
+    assert.throws(() => D.prepareImport({ bookings: [{ ...free, paymentEntries: { P1: payment('P1', 1) } }] }), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+});
+
+test('a zero-total edit rechecks newer known and unknown receipts on transaction retry', () => {
+    const original = knownBooking();
+    const initial = bookingRoot(original);
+    const free = D.buildBookingEdit({ total: '0' }, original);
+    const edit = { type: 'updateBooking', id: original.id, expectedBooking: original, booking: free };
+    const cases = [
+        [{ type: 'addPayment', id: original.id, payment: payment('NEW', 1) }, 'PAYMENT_EXCEEDS_TOTAL'],
+        [{ type: 'advancePayment', id: original.id, expectedAdvancePayment: original.advancePayment, advancePayment: { status: 'received', amountCents: 1 } }, 'ADVANCE_EXCEEDS_TOTAL'],
+        [{ type: 'advancePayment', id: original.id, expectedAdvancePayment: original.advancePayment, advancePayment: { status: 'received' } }, 'INVALID_ADVANCE_PAYMENT']
+    ];
+    for (const [receipt, code] of cases) {
+        const latest = D.reduceOperation(initial, receipt);
+        const before = clone(latest);
+        assert.throws(() => D.reduceOperation(latest, edit), hasCode(code));
+        assert.deepEqual(latest, before);
+        const savedFree = D.reduceOperation(initial, edit);
+        assert.throws(() => D.reduceOperation(savedFree, receipt), hasCode(code));
+        assert.equal(savedFree.bookings[0].totalCents, 0);
+        assert.deepEqual(D.reduceOperation(savedFree, edit), savedFree, 'A retried zero-total edit is idempotent');
+    }
+    assert.deepEqual(initial.bookings[0], original);
+});
+
+test('zero is still invalid for new nightly prices, payment entries and received advances', () => {
+    const free = D.buildBookingEdit({ total: '0' }, knownBooking());
+    for (const amount of ['0', '0.00', '0,00']) {
+        for (const booking of [knownBooking(), free]) {
+            assert.throws(() => D.buildPayment({ id: 'ZERO', amount }, booking), hasCode('INVALID_PAYMENT'));
+            assert.throws(() => D.buildAdvancePayment({ status: 'received', amount }, booking), hasCode('INVALID_ADVANCE_PAYMENT'));
+        }
+    }
+    assert.throws(() => fresh('ZERO', '2027-06-30', '2027-07-03', { price: 0 }), hasCode('INVALID_PRICE'));
+    assert.throws(() => D.reduceOperation(bookingRoot(free), { type: 'addPayment', id: free.id, payment: payment('ZERO', 0) }), hasCode('INVALID_PAYMENT'));
+    assert.throws(() => D.buildPayment({ id: 'POSITIVE', amount: '0.01' }, free), hasCode('PAYMENT_EXCEEDS_TOTAL'));
+    const wrongNight = clone(free); wrongNight.nightlyRates[0].cents = 1;
+    assert.throws(() => D.prepareImport({ bookings: [wrongNight] }), hasCode('INVALID_BOOKING'));
+    const noRates = clone(free); delete noRates.nightlyRates;
+    assert.throws(() => D.prepareImport({ bookings: [noRates] }), hasCode('INVALID_PRICE'));
 });
 
 test('only explicit recalculation with a matching quote applies seasonal nightly prices during editing', () => {

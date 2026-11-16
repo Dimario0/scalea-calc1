@@ -1000,6 +1000,111 @@ test('editing dates preserves the agreed total until the explicit recalculation 
     assert.equal(D.getBookingTotalCents(w.data.bookings[0]), 36000);
 });
 
+test('an existing legacy stay can become complimentary without changing its dates, metadata or absent payments', async () => {
+    const old = booking('complimentary', '2027-06-30', '2027-07-03', {
+        guest: 'COMPLIMENTARY SYNTHETIC', notes: 'KEEP SYNTHETIC NOTE', guestCount: 3,
+        arrivalTime: '16:30', departureTime: '10:00', cleaningStatus: 'scheduled', inquirySource: 'referral',
+        custom: { retained: true }
+    });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut; c.get('checkIn').dispatch('change');
+    c.edit(old.id); c.get('agreedTotal').value = '0'; c.get('agreedTotal').dispatch('input');
+    assert.equal(c.get('liveTotal').textContent, '0 €');
+    const pending = c.submit();
+    assert.equal(w.pending.length, 1, 'Zero is a valid explicit correction to an existing agreement');
+    w.commit(c, { holdAck: true }); await flush();
+    assert.equal(c.get('agreedTotal').value, '0', 'Keep the entered correction until acknowledgment');
+    assert.equal(c.get('syncBanner').dataset.kind, 'saving');
+    w.acknowledge(); await pending;
+    const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+    assert.equal(D.getBookingTotalCents(saved), 0);
+    for (const key of ['id', 'guest', 'phone', 'notes', 'source', 'checkIn', 'checkOut', 'guestCount', 'arrivalTime', 'departureTime', 'cleaningStatus', 'inquirySource', 'custom']) assert.deepEqual(saved[key], old[key], key);
+    for (const key of ['advancePayment', 'paymentEntries', 'deletedPaymentIds']) assert.equal(Object.hasOwn(saved, key), false, key);
+    assert.equal(summary.known, true); assert.equal(summary.receivedCents, 0); assert.equal(summary.remainingCents, 0);
+    assert.equal(summary.recordedCents, 0); assert.equal(summary.fullyPaid, true); assert.deepEqual(summary.entries, []);
+    for (const id of ['statIncome', 'statYearIncome', 'statReceived', 'statRemaining']) assert.equal(c.get(id).textContent, '0 €', id);
+    assert.equal(c.get('statUnknown').textContent, '0 броней');
+    assert.equal(c.get('statDays').textContent, '1 ночей', 'A complimentary night still occupies the apartment');
+    assert.match(c.listHTML(), /COMPLIMENTARY SYNTHETIC/); assert.match(c.listHTML(), /Без оплаты/);
+    assert.match(c.listHTML(), /Залог не требуется/);
+    c.filter('bookingFilter', 'paid'); assert.doesNotMatch(c.listHTML(), /COMPLIMENTARY SYNTHETIC/, 'A free agreement is not a received payment');
+    c.filter('bookingFilter', 'balance'); assert.doesNotMatch(c.listHTML(), /COMPLIMENTARY SYNTHETIC/);
+    c.filter('bookingFilter', 'unknown'); assert.doesNotMatch(c.listHTML(), /COMPLIMENTARY SYNTHETIC/);
+    c.context.openDeleteModal(old.id);
+    assert.ok(c.get('deleteModalInfo').innerHTML.includes('3 ночей · 0 €'));
+    assert.equal(c.currentAdvance().textContent, 'Залог не требуется');
+    assert.match(c.get('paymentSummary').innerHTML, /Без оплаты/);
+    assert.equal(c.get('paymentBaseHint').textContent, 'Бесплатное проживание: оплата и залог не требуются.');
+    assert.equal(c.get('paymentEditor').disabled, true);
+    assert.equal(c.get('paymentForm').classList.contains('hidden'), true);
+    assert.equal(c.transactions.length, 1, 'Reading the corrected card and filters performs no additional write');
+    assert.deepEqual((await c.export()).bookings, [saved]);
+});
+
+test('a complimentary stay can return to a positive agreed total without inventing payment information', async () => {
+    const old = booking('return-positive', '2027-06-30', '2027-07-03', { guest: 'RETURN POSITIVE SYNTHETIC', custom: { retained: true } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.edit(old.id); c.get('agreedTotal').value = '0'; c.get('agreedTotal').dispatch('input');
+    const complimentary = c.submit(); w.commit(c); await complimentary;
+    c.edit(old.id); assert.equal(Number(c.get('agreedTotal').value), 0);
+    c.get('agreedTotal').value = '150'; c.get('agreedTotal').dispatch('input');
+    assert.equal(c.get('liveTotal').textContent, '150 €');
+    const positive = c.submit(); w.commit(c); await positive;
+    const saved = w.data.bookings[0], summary = D.getPaymentSummary(saved);
+    assert.equal(D.getBookingTotalCents(saved), 15000);
+    assert.equal(saved.checkIn, old.checkIn); assert.equal(saved.checkOut, old.checkOut); assert.deepEqual(saved.custom, old.custom);
+    assert.equal(Object.hasOwn(saved, 'advancePayment'), false); assert.equal(Object.hasOwn(saved, 'paymentEntries'), false);
+    assert.equal(summary.known, false); assert.equal(summary.remainingCents, null); assert.equal(summary.fullyPaid, false);
+    c.filter('bookingFilter', 'unknown'); assert.match(c.listHTML(), /RETURN POSITIVE SYNTHETIC/);
+    c.filter('bookingFilter', 'balance'); assert.doesNotMatch(c.listHTML(), /RETURN POSITIVE SYNTHETIC/);
+    c.context.openDeleteModal(old.id);
+    assert.equal(c.currentAdvance().textContent, 'Залог: не отмечено');
+    assert.doesNotMatch(c.get('paymentSummary').innerHTML, /Без оплаты/);
+    assert.equal(c.get('paymentEditor').disabled, true, 'The original unknown deposit needs clarification before taking a new payment');
+});
+
+test('a complimentary stay retains its old not-received metadata without a deposit warning or paid filter result', async () => {
+    const old = booking('free-no-deposit', '2027-06-30', '2027-07-03', {
+        guest: 'FREE WITHOUT DEPOSIT SYNTHETIC', advancePayment: { status: 'not_received' }
+    });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut; c.get('checkIn').dispatch('change');
+    c.edit(old.id); c.get('agreedTotal').value = '0'; c.get('agreedTotal').dispatch('input');
+    const pending = c.submit(); w.commit(c); await pending;
+    assert.deepEqual(w.data.bookings[0].advancePayment, old.advancePayment, 'The correction must not rewrite the original deposit status');
+    c.filter('bookingFilter', 'all'); assert.match(c.listHTML(), /FREE WITHOUT DEPOSIT SYNTHETIC/);
+    assert.match(c.listHTML(), /Залог не требуется/);
+    for (const filter of ['deposit', 'paid', 'balance', 'unknown']) {
+        c.filter('bookingFilter', filter);
+        assert.doesNotMatch(c.listHTML(), /FREE WITHOUT DEPOSIT SYNTHETIC/, filter);
+    }
+    const bars = c.get('calendarGrid').children.flatMap(cell => cell.children);
+    assert.ok(bars.length > 0, 'The saved free stay still appears on the calendar');
+    for (const bar of bars) {
+        assert.doesNotMatch(bar.innerHTML, /⏳/);
+        assert.match(bar.title, /Залог не требуется/);
+    }
+    c.context.openDeleteModal(old.id);
+    assert.equal(c.currentAdvance().textContent, 'Залог не требуется');
+    assert.doesNotMatch(c.currentAdvance().className, /amber/);
+    assert.equal(c.transactions.length, 1);
+});
+
+test('a complimentary correction cannot erase a received payment or create a new zero-priced nightly booking', async () => {
+    const old = booking('received', '2027-06-30', '2027-07-03', { advancePayment: { status: 'received', amountCents: 10000 } });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.edit(old.id); c.get('agreedTotal').value = '0'; c.get('guestNotes').value = 'KEEP FAILED CORRECTION';
+    c.get('agreedTotal').dispatch('input'); await c.submit();
+    assert.equal(c.transactions.length, 0); assert.deepEqual(w.data.bookings, [old]);
+    assert.equal(c.get('agreedTotal').value, '0'); assert.equal(c.get('guestNotes').value, 'KEEP FAILED CORRECTION');
+    assert.equal(c.get('actionError').classList.contains('hidden'), false);
+    const freshWorld = new World(), fresh = freshWorld.client('NEW');
+    fresh.fill('2027-06-30', '2027-07-03', 0, 'NEW ZERO SYNTHETIC'); await fresh.submit();
+    assert.equal(fresh.transactions.length, 0); assert.deepEqual(freshWorld.data.bookings, []);
+    assert.equal(fresh.get('guestName').value, 'NEW ZERO SYNTHETIC');
+    assert.equal(fresh.get('actionError').classList.contains('hidden'), false);
+});
+
 test('a conflicting date edit is rejected without clearing the draft and can be cancelled', async () => {
     const old = booking('edit', '2027-02-01', '2027-02-03', { advancePayment: { status: 'not_received' } });
     const occupied = booking('occupied', '2027-02-05', '2027-02-07');
