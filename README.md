@@ -44,6 +44,12 @@ Adding entries merges independent IDs against the latest server record. An uncha
 
 Monthly/yearly booking totals remain the booked accommodation value allocated by stay nights; they are not cash received or profit. Payment statistics cover bookings whose arrival is in the selected month. Known recorded receipts and known remaining balances are shown separately, with a count of bookings whose payment is unknown. Unknown remaining amounts are excluded rather than invented.
 
+## Refreshing the installed calculator
+
+The «Ещё» screen includes a visible «Обновить» button. It replaces the current same-origin URL with a single fresh `_refresh` query value, fetching the current HTML and its versioned assets inside the same installed web app. It preserves the existing path, other query parameters, hash, browser storage and authentication. No booking data is written.
+
+Refreshing is blocked while a server write is pending or the calendar is disconnected. Unsaved booking fields, an advance draft or payment fields require confirmation before being discarded. A canceled confirmation retains the draft; a navigation error leaves the button available to retry.
+
 ## Check and preview
 
 Requires Node.js 22 or later for the tests, and Python 3 for the local preview:
