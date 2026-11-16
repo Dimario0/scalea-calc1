@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#edf4fb">
     <title>ScaleaStay · Календарь 2027</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="ui.css?v=complimentary-20261116">
+    <link rel="stylesheet" href="ui.css?v=paid-deposit-20261116">
 </head>
 <body data-preview="true">
     <div id="loginScreen" class="login-screen fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -101,8 +101,8 @@
                     <details class="detail-section optional-details"><summary><span>Залог в счёт проживания</span><span class="ss-muted">Уточнить отметку или сумму</span></summary><form id="advancePaymentForm"><fieldset id="depositEditor" data-write disabled><label class="ss-field" for="modalDepositStatus"><span>Получен ли залог?</span><select id="modalDepositStatus"><option value="unknown">Не отмечено</option><option value="not_received">Не получен</option><option value="received">Получен</option></select></label><div id="modalDepositFields" class="hidden"><label class="ss-field" for="modalDepositAmount"><span>Полученная сумма, € <small>если известна</small></span><input id="modalDepositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150"></label><label class="ss-field" for="modalDepositDate"><span>Дата получения <small>необязательно</small></span><input id="modalDepositDate" type="date"></label></div><p id="modalDepositSummary" class="payment-hint" aria-live="polite"></p><button id="saveDepositBtn" type="submit" class="ss-button ss-full">Сохранить залог</button></fieldset></form></details>
                     <div class="detail-actions"><button type="button" onclick="closeDeleteModal()" class="ss-button ss-full">Закрыть карточку</button><button type="button" id="confirmDeleteBtn" data-write class="ss-button ss-danger ss-full">Удалить бронь</button></div>
                 </div></div></section>
-    <script src="data.js?v=complimentary-20261116"></script>
+    <script src="data.js?v=paid-deposit-20261116"></script>
     <script src="preview-store.js"></script>
-    <script src="app.js?v=complimentary-20261116"></script>
+    <script src="app.js?v=paid-deposit-20261116"></script>
 </body>
 </html>

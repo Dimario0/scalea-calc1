@@ -1243,6 +1243,92 @@ test('final payment is bounded by the balance, waits for ACK and marks the booki
     c.filter('bookingFilter', 'paid'); assert.match(c.listHTML(), /FINAL PAYMENT GUEST/);
 });
 
+test('a fully paid stay suppresses the missing-deposit warning without changing its payment history', async () => {
+    const old = booking('fully-paid', '2027-06-30', '2027-07-04', {
+        guest: 'SYNTHETIC FULLY PAID', price: 200, advancePayment: { status: 'not_received' },
+        paymentEntries: { receipt: { id: 'receipt', amountCents: 80000, note: 'SYNTHETIC FULL RECEIPT' } },
+        custom: { retained: true }
+    });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut; c.get('checkIn').dispatch('change');
+    c.context.openDeleteModal(old.id);
+    assert.equal(D.getPaymentSummary(old).fullyPaid, true);
+    assert.doesNotMatch(c.get('deleteModalInfo').innerHTML, /modalCurrentAdvance|Залог не получен/);
+    assert.match(c.get('paymentSummary').innerHTML, /Оплачено полностью/);
+    assert.match(c.get('paymentList').innerHTML, /800 €/);
+    assert.match(c.get('paymentList').innerHTML, /SYNTHETIC FULL RECEIPT/);
+    assert.match(c.listHTML(), /SYNTHETIC FULLY PAID/);
+    assert.doesNotMatch(c.listHTML(), /Залог не получен/);
+    assert.doesNotMatch(c.listHTML(), /<span class="ss-row">\s*<\/span>/, 'Omit the empty advance row as well as its text');
+    const bars = c.get('calendarGrid').children.flatMap(cell => cell.children);
+    assert.ok(bars.length > 0);
+    for (const bar of bars) {
+        assert.doesNotMatch(bar.innerHTML, /⏳/);
+        assert.doesNotMatch(bar.title, /Залог не получен/);
+    }
+    c.filter('bookingFilter', 'deposit'); assert.doesNotMatch(c.listHTML(), /SYNTHETIC FULLY PAID/);
+    c.filter('bookingFilter', 'paid'); assert.match(c.listHTML(), /SYNTHETIC FULLY PAID/);
+    assert.equal(c.transactions.length, 0, 'Hiding a redundant warning must not rewrite the deposit or ledger');
+    assert.deepEqual(w.data.bookings, [old]);
+    assert.deepEqual((await c.export()).bookings, [old]);
+});
+
+test('a partially paid stay still shows its missing-deposit warning and remains in the deposit filter', async () => {
+    const old = booking('partially-paid', '2027-06-30', '2027-07-04', {
+        guest: 'SYNTHETIC PARTLY PAID', price: 200, advancePayment: { status: 'not_received' },
+        paymentEntries: { receipt: { id: 'receipt', amountCents: 25000, note: 'SYNTHETIC PARTIAL RECEIPT' } }
+    });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut; c.get('checkIn').dispatch('change');
+    c.context.openDeleteModal(old.id);
+    assert.equal(D.getPaymentSummary(old).remainingCents, 55000);
+    assert.equal(c.currentAdvance().textContent, 'Залог не получен');
+    assert.match(c.listHTML(), /Залог не получен/);
+    const bars = c.get('calendarGrid').children.flatMap(cell => cell.children);
+    assert.ok(bars.some(bar => /⏳/.test(bar.innerHTML)));
+    c.filter('bookingFilter', 'deposit'); assert.match(c.listHTML(), /SYNTHETIC PARTLY PAID/);
+    c.filter('bookingFilter', 'paid'); assert.doesNotMatch(c.listHTML(), /SYNTHETIC PARTLY PAID/);
+    assert.equal(c.transactions.length, 0); assert.deepEqual((await c.export()).bookings, [old]);
+});
+
+test('removing a full payment on another phone restores the deposit warning in an open card', async () => {
+    const old = booking('remove-full-payment', '2027-06-30', '2027-07-04', {
+        guest: 'SYNTHETIC RESTORED WARNING', price: 200, advancePayment: { status: 'not_received' },
+        paymentEntries: { receipt: { id: 'receipt', amountCents: 80000 } }, custom: { retained: true }
+    });
+    const w = new World({ bookings: [old] }), a = w.client('A'), b = w.client('B');
+    b.get('checkIn').value = old.checkIn; b.get('checkOut').value = old.checkOut; b.get('checkIn').dispatch('change');
+    a.context.openDeleteModal(old.id); b.context.openDeleteModal(old.id);
+    assert.doesNotMatch(b.get('deleteModalInfo').innerHTML, /modalCurrentAdvance|Залог не получен/);
+    const removal = a.context.removeBookingPayment('receipt'); w.commit(a); await removal;
+    const saved = w.data.bookings[0];
+    assert.deepEqual(saved.advancePayment, old.advancePayment);
+    assert.deepEqual(saved.custom, old.custom);
+    assert.equal(saved.deletedPaymentIds.receipt, true);
+    assert.equal(Object.hasOwn(saved.paymentEntries, 'receipt'), false);
+    assert.equal(D.getPaymentSummary(saved).remainingCents, 80000);
+    assert.equal(b.currentAdvance().textContent, 'Залог не получен');
+    b.filter('bookingFilter', 'deposit'); assert.match(b.listHTML(), /SYNTHETIC RESTORED WARNING/);
+    const bars = b.get('calendarGrid').children.flatMap(cell => cell.children);
+    assert.ok(bars.some(bar => /⏳/.test(bar.innerHTML)));
+    assert.equal(b.transactions.length, 0, 'The second phone updates from the listener without an extra write');
+});
+
+test('a fully paid stay retains the visible history of a received deposit', async () => {
+    const old = booking('received-and-paid', '2027-06-30', '2027-07-04', {
+        guest: 'SYNTHETIC RECEIVED DEPOSIT', price: 200, advancePayment: { status: 'received', amountCents: 25000 },
+        paymentEntries: { receipt: { id: 'receipt', amountCents: 55000, note: 'SYNTHETIC FINAL RECEIPT' } }
+    });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.context.openDeleteModal(old.id);
+    assert.equal(D.getPaymentSummary(old).fullyPaid, true);
+    assert.equal(c.currentAdvance().textContent, '✓ Залог получен · 250 €');
+    assert.match(c.listHTML(), /✓ Залог получен · 250 €/);
+    assert.match(c.get('paymentList').innerHTML, /250 €/); assert.match(c.get('paymentList').innerHTML, /550 €/);
+    assert.match(c.get('paymentList').innerHTML, /SYNTHETIC FINAL RECEIPT/);
+    assert.equal(c.transactions.length, 0); assert.deepEqual((await c.export()).bookings, [old]);
+});
+
 test('a rejected payment retains amount, date and note for a successful retry', async () => {
     const old = booking('payment', '2027-02-01', '2027-02-06', { advancePayment: { status: 'not_received' } });
     const w = new World({ bookings: [old] }), c = w.client('A');
