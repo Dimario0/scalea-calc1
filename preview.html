@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#edf4fb">
     <title>ScaleaStay · Календарь 2027</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="ui.css">
+    <link rel="stylesheet" href="ui.css?v=recovery-20261116">
 </head>
 <body data-preview="true">
     <div id="loginScreen" class="login-screen fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -14,11 +14,16 @@
             <div class="brand-mark" aria-hidden="true">S</div>
             <h1 id="loginTitle" class="brand-title">Scalea<span>Stay</span></h1>
             <p class="ss-muted">Личный календарь квартиры</p>
-            <form id="loginForm" class="ss-form">
-                <label class="ss-field" for="emailInput"><span>Электронная почта</span><input type="email" id="emailInput" autocomplete="username" required></label>
+            <form id="loginForm" class="ss-form" onsubmit="return false">
+                <label class="ss-field" for="emailInput"><span>Электронная почта</span><input type="email" id="emailInput" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
                 <label class="ss-field" for="passwordInput"><span>Пароль</span><input type="password" id="passwordInput" autocomplete="current-password" required></label>
                 <p id="loginError" class="ss-inline-error hidden" role="alert">Неверный логин или пароль</p>
-                <button type="submit" class="ss-button ss-primary ss-full">Войти</button>
+                <button id="loginSubmitBtn" type="submit" class="ss-button ss-primary ss-full">Войти</button>
+                <div class="login-recovery">
+                    <button id="resetPasswordBtn" type="button" class="ss-button ss-quiet ss-full" disabled>Забыли пароль?</button>
+                    <p class="ss-help" id="loginRecoveryHelp">Введите почту в поле выше. Мы отправим инструкцию для восстановления доступа.</p>
+                    <p id="loginRecoveryStatus" class="sync-banner hidden" data-kind="ready" role="status" aria-live="polite"></p>
+                </div>
             </form>
         </section>
     </div>
@@ -98,6 +103,6 @@
                 </div></div></section>
     <script src="data.js"></script>
     <script src="preview-store.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=recovery-20261116"></script>
 </body>
 </html>

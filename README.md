@@ -12,6 +12,10 @@ Cleaning and electricity are included in the guest price. There are no OTA sched
 
 Each automatic quote uses the rate for every paid night, with checkout excluded. Automatic rates apply only to nights in 2027; other dates require a manual nightly price. New bookings store an exact total in cents and a nightly breakdown. Historical records keep all their original fields and their former displayed total; changing the default schedule does not recalculate them. For records without saved nightly rates, statistics allocate that preserved total over the stay in integer cents, with any remainder assigned to the first nights. This keeps monthly and yearly statistics consistent with the booking card without rewriting old records. Legacy `prices` data is preserved and is not used as the 2027 schedule.
 
+## Sign-in and recovery
+
+The sign-in screen includes a password-recovery button. The owner enters their account email and explicitly requests an instruction email; the old password is not required. The existing Firebase Auth service and its configured email action handler are retained. Unknown or disabled addresses receive the same neutral confirmation. The owner completes the password change themselves using the link in the email, then returns to sign in. Recovery does not read or change bookings. The isolated preview uses an Auth substitute and sends no email.
+
 ## Shared saving
 
 All writes are intentions applied with a Firebase root transaction to its latest value: add one booking, update one advance payment, delete one expected record, or merge an import. Every retry rechecks dates and IDs. No write sends the phone's whole stale state. Transactions use `applyLocally=false`; forms clear only after the server confirms commitment. The live subscription owns the displayed state, so a late transaction result cannot replace a newer listener snapshot.

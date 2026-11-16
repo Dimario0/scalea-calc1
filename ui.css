@@ -1194,12 +1194,22 @@ a {
     border-top:1px solid var(--line)
 }
 .login-screen {
-    background:radial-gradient(ellipse at 30% 20%,#dceaf9,transparent 65%),#edf4fb
+    position:fixed;
+    inset:0;
+    z-index:100;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    background:radial-gradient(ellipse at 30% 20%,#dceaf9,transparent 65%),#edf4fb;
+    overflow-y:auto
 }
 .login-card {
     width:min(390px,100%);
     padding:32px;
-    border-radius:25px
+    border-radius:25px;
+    margin-block:auto;
+    flex-shrink:0
 }
 .login-card>.brand-mark {
     margin-bottom:20px;
@@ -1218,6 +1228,17 @@ a {
     display:grid;
     gap:18px;
     margin-top:28px
+}
+.login-recovery {
+    display:grid;
+    gap:10px;
+    padding-top:2px
+}
+.login-recovery .ss-help {
+    text-align:center
+}
+.login-recovery .sync-banner {
+    margin:0
 }
 .ss-inline-error {
     color:#b13e4a;

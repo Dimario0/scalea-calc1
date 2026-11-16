@@ -18,7 +18,7 @@ function booking(id, start, end, extra = {}) {
     return { id, guest: 'SYNTHETIC', phone: '', notes: '', source: 'Прямая бронь', checkIn: start, checkOut: end, price: 60, ...extra };
 }
 
-function dom() {
+function dom({ withoutRecoveryUI = false } = {}) {
     const elements = new Map();
     const documentListeners = new Map();
     const controls = ['bookingFields', 'confirmDeleteBtn', 'importDesktop', 'importMobile', 'depositEditor', 'paymentEditor'];
@@ -29,8 +29,9 @@ function dom() {
         cleaningStatus: 'unknown', inquirySource: 'unknown'
     };
     const get = id => {
+        if (withoutRecoveryUI && ['loginSubmitBtn', 'resetPasswordBtn', 'loginRecoveryStatus'].includes(id)) return null;
         if (elements.has(id)) return elements.get(id);
-        let classes = new Set(['actionError', 'deleteModalError', 'deleteModal', 'deleteModalChanged', 'dataModalStatus', 'deleteModalStatus', 'loginError', 'appContainer', 'previewBanner'].includes(id) ? ['hidden'] : []);
+        let classes = new Set(['actionError', 'deleteModalError', 'deleteModal', 'deleteModalChanged', 'dataModalStatus', 'deleteModalStatus', 'loginError', 'loginRecoveryStatus', 'appContainer', 'previewBanner'].includes(id) ? ['hidden'] : []);
         let html = '';
         const listeners = new Map();
         const element = {
@@ -51,6 +52,10 @@ function dom() {
             querySelectorAll() { return []; },
             setAttribute(name, value) { this[name] = String(value); },
             getAttribute(name) { return this[name] ?? null; },
+            checkValidity() {
+                this.validityChecks = (this.validityChecks || 0) + 1;
+                return id !== 'emailInput' || /^[^\s@]+@[^\s@]+$/.test(this.value.trim());
+            },
             focus() { this.focused = true; }, scrollIntoView() {},
             appendChild(child) { this.children.push(child); },
             click() { this.clicked = true; }, remove() { this.removed = true; },
@@ -87,11 +92,12 @@ class World {
         this.heldAcknowledgments = [];
     }
 
-    client(name, { load = true, online = true, signedIn = true } = {}) {
-        const ui = dom();
+    client(name, { load = true, online = true, signedIn = true, withoutRecoveryUI = false } = {}) {
+        const ui = dom({ withoutRecoveryUI });
         const c = {
             name, ui, connected: false, cache: null, subscriptions: { data: [], connection: [] },
-            paths: [], transactions: [], authCallback: null, blob: null, timers: [], windows: [], signOutCalls: 0, uuid: 0
+            paths: [], transactions: [], authCallback: null, blob: null, timers: [], windows: [], signOutCalls: 0, uuid: 0,
+            signInCalls: [], passwordResetRequests: []
         };
         const kindForPath = pathName => pathName === '.info/connected' ? 'connection' : 'data';
         const refs = new Map();
@@ -120,8 +126,21 @@ class World {
         };
         const auth = {
             onAuthStateChanged: callback => { c.authCallback = callback; },
-            signInWithEmailAndPassword: async () => ({}),
+            signInWithEmailAndPassword: async (email, password) => { c.signInCalls.push({ email, password }); return {}; },
+            sendPasswordResetEmail: email => new Promise((resolve, reject) => {
+                c.passwordResetRequests.push({ email, resolve, reject, settled: false });
+            }),
             signOut: async () => { c.signOutCalls++; c.authenticate(null); }
+        };
+        c.resolvePasswordReset = (index = c.passwordResetRequests.length - 1) => {
+            const request = c.passwordResetRequests[index];
+            assert.ok(request && !request.settled, 'Expected an unsettled synthetic password reset');
+            request.settled = true; request.resolve();
+        };
+        c.rejectPasswordReset = (code, index = c.passwordResetRequests.length - 1) => {
+            const request = c.passwordResetRequests[index];
+            assert.ok(request && !request.settled, 'Expected an unsettled synthetic password reset');
+            request.settled = true; request.reject(Object.assign(new Error('SYNTHETIC_AUTH_ERROR'), { code }));
         };
         const windowListeners = new Map();
         const context = {
@@ -154,6 +173,8 @@ class World {
             c.get('price').value = String(price); c.get('guestName').value = guest;
         };
         c.submit = () => c.get('bookingForm').onsubmit({ preventDefault() {} });
+        c.signIn = () => c.get('loginForm').onsubmit({ preventDefault() {} });
+        c.resetPassword = () => c.get('resetPasswordBtn').onclick();
         c.remove = id => { c.context.openDeleteModal(id); return c.get('confirmDeleteBtn').onclick(); };
         c.setAdvance = (prefix, status, amount = '', receivedOn = '') => {
             const ids = prefix === 'modal'
@@ -225,6 +246,170 @@ class World {
         op.reject(Object.assign(new Error('SYNTHETIC_PERMISSION_DENIED'), { code: 'PERMISSION_DENIED' }));
     }
 }
+
+test('password recovery makes no requests on load, auth transitions or an ordinary sign-in', async () => {
+    const w = new World(), c = w.client('AUTH', { signedIn: false });
+    c.authenticate(null);
+    assert.equal(c.passwordResetRequests.length, 0);
+    c.get('emailInput').value = ' synthetic@example.invalid ';
+    c.get('passwordInput').value = 'SYNTHETIC_PASSWORD';
+    c.get('emailInput').dispatch('input'); c.get('passwordInput').dispatch('input');
+    assert.equal(c.passwordResetRequests.length, 0, 'Editing credentials is not permission to send an email');
+    await c.signIn();
+    assert.deepEqual(c.signInCalls, [{ email: 'synthetic@example.invalid', password: 'SYNTHETIC_PASSWORD' }]);
+    assert.equal(c.get('loginError').classList.contains('hidden'), true);
+    assert.equal(c.passwordResetRequests.length, 0);
+    c.authenticate({ uid: 'synthetic-authenticated-user' });
+    assert.equal(c.passwordResetRequests.length, 0);
+    assert.equal(c.transactions.length, 0);
+    assert.deepEqual(w.data, { bookings: [] });
+});
+
+test('new auth code still signs in with cached markup that has no recovery controls', async () => {
+    const w = new World(), c = w.client('LEGACY-AUTH', { signedIn: false, withoutRecoveryUI: true });
+    for (const id of ['loginSubmitBtn', 'resetPasswordBtn', 'loginRecoveryStatus']) assert.equal(c.get(id), null);
+    assert.equal(typeof c.authCallback, 'function', 'Missing optional controls must not abort auth initialization');
+    c.authenticate(null);
+    assert.equal(c.get('loginError').classList.contains('hidden'), true);
+    assert.equal(typeof c.get('loginForm').onsubmit, 'function');
+    c.get('emailInput').value = 'synthetic@example.invalid';
+    c.get('passwordInput').value = 'SYNTHETIC_PASSWORD';
+    const first = c.signIn(), duplicate = c.signIn();
+    assert.equal(c.signInCalls.length, 1, 'The duplicate guard also works without the new button ID');
+    await Promise.all([first, duplicate]);
+    assert.deepEqual(c.signInCalls, [{ email: 'synthetic@example.invalid', password: 'SYNTHETIC_PASSWORD' }]);
+    assert.equal(c.get('passwordInput').value, '');
+    assert.equal(c.get('emailInput').disabled, false);
+    assert.equal(c.get('passwordInput').disabled, false);
+    assert.equal(c.get('loginError').classList.contains('hidden'), true);
+    assert.equal(c.passwordResetRequests.length, 0);
+    assert.equal(c.transactions.length, 0); assert.deepEqual(c.paths, []);
+});
+
+test('password recovery validates only the email and does not require a password', async () => {
+    const w = new World(), c = w.client('AUTH', { signedIn: false });
+    c.authenticate(null);
+    for (const value of ['', '   ', 'not-an-email', 'bad@@example.invalid']) {
+        c.get('emailInput').value = value;
+        await c.resetPassword();
+        assert.equal(c.passwordResetRequests.length, 0, value);
+        assert.equal(c.get('loginError').classList.contains('hidden'), false);
+        assert.equal(c.get('resetPasswordBtn').disabled, false);
+    }
+    c.get('emailInput').value = 'synthetic@example.invalid';
+    c.get('passwordInput').value = '';
+    const pending = c.resetPassword();
+    assert.equal(c.passwordResetRequests.length, 1);
+    assert.equal(c.passwordResetRequests[0].email, 'synthetic@example.invalid');
+    assert.equal(c.get('passwordInput').validityChecks || 0, 0, 'Recovery must not validate the required sign-in password');
+    c.resolvePasswordReset(); await pending;
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), false);
+    assert.equal(c.signInCalls.length, 0); assert.equal(c.transactions.length, 0);
+    assert.deepEqual(c.paths, []);
+});
+
+test('an in-flight sign-in blocks duplicate sign-in and password reset until it finishes', async () => {
+    const w = new World(), c = w.client('AUTH', { signedIn: false });
+    c.authenticate(null);
+    c.get('emailInput').value = 'synthetic@example.invalid';
+    c.get('passwordInput').value = 'SYNTHETIC_PASSWORD';
+    const first = c.signIn();
+    for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, true, id);
+    const duplicate = c.signIn(), recovery = c.resetPassword();
+    assert.equal(c.signInCalls.length, 1);
+    assert.equal(c.passwordResetRequests.length, 0);
+    await Promise.all([first, duplicate, recovery]);
+    for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, false, id);
+    assert.equal(c.get('loginError').classList.contains('hidden'), true);
+    assert.equal(c.get('passwordInput').value, '');
+    assert.equal(c.transactions.length, 0); assert.deepEqual(c.paths, []);
+});
+
+test('a pending explicit reset prevents duplicate emails and simultaneous sign-in until completion', async () => {
+    const w = new World(), c = w.client('AUTH', { signedIn: false });
+    c.authenticate(null);
+    c.get('emailInput').value = 'synthetic@example.invalid';
+    c.get('passwordInput').value = 'KEEP_SYNTHETIC_PASSWORD';
+    const pending = c.resetPassword();
+    for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, true, id);
+    assert.match(c.get('resetPasswordBtn').textContent, /Отправляем/);
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), true, 'No success before the auth service responds');
+    c.authenticate(null);
+    for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, true, 'An auth callback must not unlock a pending request');
+    const duplicate = c.resetPassword();
+    assert.equal(c.passwordResetRequests.length, 1);
+    await duplicate; await c.signIn();
+    assert.equal(c.signInCalls.length, 0);
+    assert.equal(c.get('emailInput').value, 'synthetic@example.invalid');
+    assert.equal(c.get('passwordInput').value, 'KEEP_SYNTHETIC_PASSWORD');
+    c.resolvePasswordReset(); await pending;
+    for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, false, id);
+    assert.equal(c.get('emailInput').value, 'synthetic@example.invalid');
+    assert.equal(c.get('passwordInput').value, 'KEEP_SYNTHETIC_PASSWORD');
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), false);
+    assert.equal(c.transactions.length, 0); assert.deepEqual(c.paths, []);
+});
+
+test('password recovery gives the same generic confirmation for success, unknown and disabled accounts', async () => {
+    let confirmation;
+    for (const outcome of ['success', 'auth/user-not-found', 'auth/user-disabled']) {
+        const w = new World(), c = w.client('AUTH', { signedIn: false });
+        c.authenticate(null); c.get('emailInput').value = 'synthetic@example.invalid';
+        const pending = c.resetPassword();
+        if (outcome === 'success') c.resolvePasswordReset(); else c.rejectPasswordReset(outcome);
+        await pending;
+        const message = c.get('loginRecoveryStatus').textContent;
+        assert.ok(message.length > 0);
+        if (confirmation === undefined) confirmation = message;
+        assert.equal(message, confirmation, outcome);
+        assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), false);
+        assert.equal(c.get('loginError').classList.contains('hidden'), true);
+        assert.equal(c.get('emailInput').value, 'synthetic@example.invalid');
+        assert.equal(c.get('resetPasswordBtn').disabled, false);
+        assert.equal(c.signInCalls.length, 0); assert.equal(c.transactions.length, 0);
+        assert.deepEqual(c.paths, []);
+    }
+});
+
+test('network and rate-limit reset failures preserve the email and allow an explicit successful retry', async () => {
+    for (const code of ['auth/network-request-failed', 'auth/too-many-requests']) {
+        const w = new World(), c = w.client('AUTH', { signedIn: false });
+        c.authenticate(null); c.get('emailInput').value = 'synthetic@example.invalid';
+        const first = c.resetPassword(); c.rejectPasswordReset(code); await first;
+        assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), true);
+        assert.equal(c.get('loginError').classList.contains('hidden'), false);
+        assert.ok(c.get('loginError').textContent.length > 0);
+        assert.doesNotMatch(c.get('loginError').textContent, /auth\/|SYNTHETIC_AUTH_ERROR/);
+        assert.equal(c.get('emailInput').value, 'synthetic@example.invalid');
+        for (const id of ['resetPasswordBtn', 'loginSubmitBtn', 'emailInput', 'passwordInput']) assert.equal(c.get(id).disabled, false, id);
+        assert.equal(c.passwordResetRequests.length, 1, 'An error must not automatically resend an email');
+        const retry = c.resetPassword();
+        assert.equal(c.passwordResetRequests.length, 2);
+        assert.equal(c.passwordResetRequests[1].email, 'synthetic@example.invalid');
+        c.resolvePasswordReset(); await retry;
+        assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), false);
+        assert.equal(c.get('loginError').classList.contains('hidden'), true);
+        assert.equal(c.get('emailInput').value, 'synthetic@example.invalid');
+        assert.equal(c.transactions.length, 0); assert.deepEqual(c.paths, []);
+    }
+});
+
+test('editing the email clears stale recovery messages without sending another request', async () => {
+    const w = new World(), c = w.client('AUTH', { signedIn: false });
+    c.authenticate(null); c.get('emailInput').value = 'synthetic@example.invalid';
+    const first = c.resetPassword(); c.resolvePasswordReset(); await first;
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), false);
+    c.get('emailInput').value = 'other-synthetic@example.invalid'; c.get('emailInput').dispatch('input');
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), true);
+    assert.equal(c.passwordResetRequests.length, 1);
+    const second = c.resetPassword(); c.rejectPasswordReset('auth/network-request-failed'); await second;
+    assert.equal(c.get('loginError').classList.contains('hidden'), false);
+    c.get('emailInput').value = 'third-synthetic@example.invalid'; c.get('emailInput').dispatch('input');
+    assert.equal(c.get('loginError').classList.contains('hidden'), true);
+    assert.equal(c.get('loginRecoveryStatus').classList.contains('hidden'), true);
+    assert.equal(c.passwordResetRequests.length, 2);
+    assert.equal(c.transactions.length, 0); assert.deepEqual(c.paths, []);
+});
 
 test('initial loading blocks writes even if the connection is ready', async () => {
     const w = new World(), c = w.client('A', { load: false });
