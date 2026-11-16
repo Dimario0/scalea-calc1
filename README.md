@@ -14,11 +14,19 @@ Each automatic quote uses the rate for every paid night, with checkout excluded.
 
 ## Shared saving
 
-All writes are intentions applied with a Firebase root transaction to its latest value: add one booking, delete one expected record, or merge an import. Every retry rechecks dates and IDs. No write sends the phone's whole stale state. Transactions use `applyLocally=false`; forms clear only after the server confirms commitment. The live subscription owns the displayed state, so a late transaction result cannot replace a newer listener snapshot.
+All writes are intentions applied with a Firebase root transaction to its latest value: add one booking, update one advance payment, delete one expected record, or merge an import. Every retry rechecks dates and IDs. No write sends the phone's whole stale state. Transactions use `applyLocally=false`; forms clear only after the server confirms commitment. The live subscription owns the displayed state, so a late transaction result cannot replace a newer listener snapshot.
 
 Editing is disabled before successful loading, after a read failure, while saving, and without a connection. If connectivity drops during a transaction, the screen retains a pending message and the form until confirmation. Unconfirmed browser writes are not a durable offline backup: do not close a pending page.
 
 Imports validate the entire file and merge bookings by ID. Conflicting IDs or dates abort the import; identical records are skipped. Imports never replace the database or tariff settings. Deletion markers prevent a previous export from silently resurrecting deleted records. Exports retain all root and booking fields, plus export metadata, and identify whether the current view was connected.
+
+## Advance payment (guest-facing label: «Залог»)
+
+The owner confirmed that this payment counts toward the agreed accommodation total. Each booking can record `advancePayment` with status `unknown`, `not_received`, or `received`, an optional exact amount in cents, and an optional receipt date. No amount, percentage or deadline is imposed. A received payment may have an unknown amount; its remaining balance then stays unknown. Missing metadata in historical records is shown as «Не отмечено», never as an unpaid debt. Loading a historical record does not create metadata or write to the server.
+
+New bookings can include the advance. Existing booking cards allow updating only this field, keeping the original dates, price, total, nightly quote and all other metadata. A transaction compares the field seen when opening the card with the current server field; differing edits from two stale phones require reopening the card. Identical retried updates are harmless. The editor keeps entered values after a rejected write and displays confirmation only after acknowledgment.
+
+«Остаток после залога» subtracts the known advance once from the accommodation total. This feature does not track later final payments or refunds. Monthly/yearly totals remain the booked accommodation value allocated by stay nights; they are not cash received or profit.
 
 ## Check and preview
 

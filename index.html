@@ -41,6 +41,7 @@
         .booking-end { background: linear-gradient(135deg, #bfdbfe, #2563eb); border-radius: 0 6px 6px 0; margin-left: -1px; }
         .booking-checkout { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; border-radius: 6px; width: 75%; font-size: 9px; padding-left: 4px; box-shadow: none; }
 
+        .booking-visible-continuation { background: #bfdbfe; color: #1e3a8a; }
         .mobile-nav { display: none; }
         @media (max-width: 1024px) {
             .mobile-nav { display: grid; padding-bottom: calc(4px + env(safe-area-inset-bottom, 16px)); z-index: 999; }
@@ -64,6 +65,11 @@
             .calendar-header .month-label { min-width: 78px; padding-left: 4px; padding-right: 4px; }
             .calendar-header .nav-btn { padding: 5px; }
             #mobilePricesModal, #mobileDataModal { padding-bottom: 100px; }
+        }
+        @media (max-width: 360px) {
+            header.calendar-header { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+            .calendar-header .month-controls { grid-row: 2; grid-column: 1 / -1; justify-self: center; }
+            .calendar-header > :last-child { grid-row: 1; grid-column: 2; }
         }
         #deleteModal { z-index: 1070; }
         #deleteModal > div { max-height: calc(100dvh - 40px); overflow-y: auto; }
@@ -93,11 +99,11 @@
                     <div id="cloudStatus" class="w-2 h-2 rounded-full bg-slate-300 ml-2 animate-pulse" title="Загрузка данных"></div>
                 </div>
 
-                <div class="flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
+                <div class="month-controls flex items-center bg-slate-100/50 rounded-xl p-1 gap-1">
                     <button id="prevMonth" aria-label="Предыдущий месяц" class="nav-btn p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 active:scale-90 transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
                     </button>
-                    <div class="px-2 text-center min-w-[110px] select-none">
+                    <div class="month-label px-2 text-center min-w-[110px] select-none">
                         <div id="displayMonth" class="text-sm font-black uppercase leading-none text-slate-700">...</div>
                         <div id="displayYear" class="text-[10px] font-bold text-slate-400">...</div>
                     </div>
@@ -161,6 +167,22 @@
                                 </div>
                             </div>
 
+                            <div class="bg-slate-50 p-3 rounded-xl space-y-3">
+                                <label for="depositStatus" class="block text-sm font-bold text-slate-700">Залог в счёт проживания</label>
+                                <select id="depositStatus" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                                    <option value="unknown">Не отмечено</option>
+                                    <option value="not_received">Не получен</option>
+                                    <option value="received">Получен</option>
+                                </select>
+                                <div id="depositFields" class="hidden space-y-3">
+                                    <label class="block text-sm text-slate-600" for="depositAmount">Полученная сумма, € (если известна)</label>
+                                    <input id="depositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                                    <label class="block text-sm text-slate-600" for="depositDate">Дата получения (необязательно)</label>
+                                    <input id="depositDate" type="date" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                                </div>
+                                <p id="depositSummary" class="text-sm text-slate-600" aria-live="polite">Оплата не отмечена. Остаток пока неизвестен.</p>
+                            </div>
+
                             <p id="quoteHint" class="tariff-note">Прямые цены 2027 · квартира целиком · до 4 гостей. Уборка и электричество включены.</p>
                             <button type="submit" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/30 active:scale-95 transition flex justify-center items-center gap-2 text-sm cursor-pointer">
                                 <span>Добавить</span>
@@ -170,7 +192,7 @@
                     </div>
 
                     <div id="statsBlock" class="glass-dark p-5 rounded-3xl text-white">
-                        <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Доход (Месяц)</h3>
+                        <h3 class="text-[10px] opacity-60 font-black uppercase tracking-widest mb-4">Сумма броней · месяц</h3>
                         <div class="flex justify-between items-baseline mb-3">
                             <span id="statIncome" class="text-3xl font-light tracking-tight">0 €</span>
                             <div class="text-right">
@@ -207,6 +229,7 @@
 
                 <div id="calendarView" class="lg:col-span-9 h-full">
                     <div class="glass rounded-3xl overflow-hidden shadow-sm min-h-[500px]">
+                        <p class="p-3 text-xs text-slate-600 bg-white/80 border-b border-slate-100">Залог: ✓ получен · ⏳ не получен · без значка — не отмечено</p>
                         <div class="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200">
                             <div class="py-3 text-center text-[10px] font-black text-slate-400">ПН</div>
                             <div class="py-3 text-center text-[10px] font-black text-slate-400">ВТ</div>
@@ -272,9 +295,26 @@
     </div>
 
     <div id="deleteModal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 modal-animate">
-        <div class="glass p-6 rounded-3xl w-full max-w-xs shadow-2xl">
+        <div class="glass p-5 rounded-3xl w-full max-w-sm shadow-2xl">
             <h3 class="text-lg font-bold text-center text-slate-800 mb-4">Карточка брони</h3>
             <div id="deleteModalStatus" class="sync-banner hidden" role="status" aria-live="polite"></div><div id="deleteModalError" class="sync-banner hidden" data-kind="error" role="alert"></div><div id="deleteModalInfo" class="bg-white p-4 rounded-xl text-center mb-6 shadow-sm border border-slate-100 text-sm"></div>
+            <p id="deleteModalChanged" class="hidden mb-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm" role="status">Залог обновлён на другом телефоне. Введённые вами значения оставлены ниже. Закройте и снова откройте карточку, чтобы редактировать актуальные данные.</p>
+            <form id="advancePaymentForm" class="mb-5"><fieldset id="depositEditor" data-write class="space-y-3" disabled>
+                <label for="modalDepositStatus" class="block text-sm font-bold text-slate-700">Залог в счёт проживания</label>
+                <select id="modalDepositStatus" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                    <option value="unknown">Не отмечено</option>
+                    <option value="not_received">Не получен</option>
+                    <option value="received">Получен</option>
+                </select>
+                <div id="modalDepositFields" class="hidden space-y-3">
+                    <label for="modalDepositAmount" class="block text-sm text-slate-600">Полученная сумма, € (если известна)</label>
+                    <input id="modalDepositAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 150" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                    <label for="modalDepositDate" class="block text-sm text-slate-600">Дата получения (необязательно)</label>
+                    <input id="modalDepositDate" type="date" class="w-full min-h-[44px] p-3 rounded-xl bg-white ring-1 ring-slate-200 text-base">
+                </div>
+                <p id="modalDepositSummary" class="text-sm text-slate-600" aria-live="polite"></p>
+                <button id="saveDepositBtn" type="submit" class="w-full min-h-[44px] p-3 bg-blue-600 text-white font-bold rounded-xl">Сохранить залог</button>
+            </fieldset></form>
             <div class="flex gap-3">
                 <button onclick="closeDeleteModal()" class="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition text-sm">Закрыть</button>
                 <button id="confirmDeleteBtn" data-write class="flex-1 py-3 font-bold bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition shadow-lg shadow-rose-200 text-sm">Удалить</button>

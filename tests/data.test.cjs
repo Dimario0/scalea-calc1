@@ -289,3 +289,181 @@ test('browser UMD entry exposes the same fixed direct schedule without Firebase'
     assert.deepEqual(Array.from(context.ScaleaData.DIRECT_RATES_2027), Array.from(D.DIRECT_RATES_2027));
     assert.equal(context.ScaleaData.quoteStay('2027-08-01', '2027-08-06').totalCents, 70000);
 });
+
+test('old bookings without an advance field stay unknown without changing the record', () => {
+    const booking = legacy();
+    const before = clone(booking);
+    assert.deepEqual(D.getAdvancePayment(booking), { status: 'unknown', amountCents: null, receivedOn: null, remainingCents: null });
+    assert.deepEqual(booking, before);
+    assert.ok(!Object.hasOwn(D.normalizeData({ bookings: [booking] }).bookings[0], 'advancePayment'));
+});
+
+test('not received means zero advance and the full agreed total remains', () => {
+    const booking = fresh();
+    const payment = D.buildAdvancePayment({ status: 'not_received', amount: '', receivedOn: '' }, booking);
+    assert.deepEqual(payment, { status: 'not_received' });
+    assert.deepEqual(D.getAdvancePayment({ ...booking, advancePayment: payment }), { status: 'not_received', amountCents: 0, receivedOn: null, remainingCents: 30500 });
+});
+
+test('received with an unknown amount keeps the remainder unknown, even when a receipt date is known', () => {
+    const booking = fresh();
+    const payment = D.buildAdvancePayment({ status: 'received', amount: ' ', receivedOn: '2026-11-16' }, booking);
+    assert.deepEqual(payment, { status: 'received', receivedOn: '2026-11-16' });
+    assert.deepEqual(D.getAdvancePayment({ ...booking, advancePayment: payment }), { status: 'received', amountCents: null, receivedOn: '2026-11-16', remainingCents: null });
+    assert.deepEqual(D.buildAdvancePayment({ status: 'received' }, booking), { status: 'received' });
+});
+
+test('a received advance reduces the stay total rather than adding a charge', () => {
+    const booking = fresh();
+    const payment = D.buildAdvancePayment({ status: 'received', amount: '100.25', receivedOn: '2026-11-16' }, booking);
+    assert.deepEqual(payment, { status: 'received', amountCents: 10025, receivedOn: '2026-11-16' });
+    const paidBooking = { ...booking, advancePayment: payment };
+    assert.equal(D.getBookingTotalCents(paidBooking), 30500);
+    assert.deepEqual(D.getAdvancePayment(paidBooking), { status: 'received', amountCents: 10025, receivedOn: '2026-11-16', remainingCents: 20475 });
+    assert.deepEqual(paidBooking.nightlyRates, booking.nightlyRates);
+});
+
+test('advance euro inputs become exact integer cents without binary rounding or silent fractions of cents', () => {
+    const booking = fresh();
+    assert.equal(D.buildAdvancePayment({ status: 'received', amount: '0.29' }, booking).amountCents, 29);
+    assert.equal(D.buildAdvancePayment({ status: 'received', amount: '010,10' }, booking).amountCents, 1010);
+    assert.equal(D.buildAdvancePayment({ status: 'received', amount: '1.05' }, booking).amountCents, 105);
+    for (const amount of ['1.005', '0.001', '1e2', '-1', '0', '0.00', 'bad', '9007199254740992', 100]) {
+        assert.throws(() => D.buildAdvancePayment({ status: 'received', amount }, booking), hasCode('INVALID_ADVANCE_PAYMENT'));
+    }
+});
+
+test('advance cannot exceed the exact quoted total, including the one-cent averaged-price difference', () => {
+    const booking = fresh();
+    const full = D.buildAdvancePayment({ status: 'received', amount: '305.00' }, booking);
+    assert.equal(D.getAdvancePayment({ ...booking, advancePayment: full }).remainingCents, 0);
+    assert.throws(() => D.buildAdvancePayment({ status: 'received', amount: '305.01' }, booking), hasCode('ADVANCE_EXCEEDS_TOTAL'));
+});
+
+test('legacy remainder uses the historical displayed total without repricing the booking', () => {
+    const booking = legacy('OLD', '2026-06-30', '2026-07-03', 101.67);
+    const payment = D.buildAdvancePayment({ status: 'received', amount: '100.01' }, booking);
+    assert.equal(D.getAdvancePayment({ ...booking, advancePayment: payment }).remainingCents, 20499);
+    assert.equal(booking.price, 101.67);
+    assert.equal(D.getAdvancePayment({ ...booking, advancePayment: { status: 'not_received' } }).remainingCents, 30500);
+    assert.throws(() => D.buildAdvancePayment({ status: 'received', amount: '305.01' }, booking), hasCode('ADVANCE_EXCEEDS_TOTAL'));
+});
+
+test('unknown and not-received advances cannot carry a sum or a receipt date', () => {
+    const booking = fresh();
+    for (const status of ['unknown', 'not_received']) {
+        assert.deepEqual(D.buildAdvancePayment({ status, amount: '', receivedOn: '' }, booking), { status });
+        assert.throws(() => D.buildAdvancePayment({ status, amount: '1' }, booking), hasCode('INVALID_ADVANCE_PAYMENT'));
+        assert.throws(() => D.buildAdvancePayment({ status, receivedOn: '2026-11-16' }, booking), hasCode('INVALID_ADVANCE_PAYMENT'));
+    }
+});
+
+test('receipt date is optional and validated without inventing a due date or percentage', () => {
+    const booking = fresh();
+    assert.deepEqual(D.buildAdvancePayment({ status: 'received', amount: '50', receivedOn: '' }, booking), { status: 'received', amountCents: 5000 });
+    assert.throws(() => D.buildAdvancePayment({ status: 'received', amount: '50', receivedOn: '2027-02-29' }, booking), hasCode('INVALID_ADVANCE_PAYMENT'));
+    assert.deepEqual(D.buildAdvancePayment({ status: 'received', receivedOn: '2028-02-29' }, booking), { status: 'received', receivedOn: '2028-02-29' });
+});
+
+test('new booking accepts canonical advance data and keeps the same price and nightly breakdown', () => {
+    const base = fresh();
+    const payment = D.buildAdvancePayment({ status: 'received', amount: '100' }, base);
+    const booking = fresh('A', base.checkIn, base.checkOut, { advancePayment: payment });
+    assert.deepEqual(booking.advancePayment, payment);
+    const withoutPayment = clone(booking);
+    delete withoutPayment.advancePayment;
+    assert.deepEqual(withoutPayment, base);
+    payment.amountCents = 1;
+    assert.equal(booking.advancePayment.amountCents, 10000);
+});
+
+test('malformed canonical advance data aborts import instead of being dropped or interpreted as unpaid', () => {
+    const booking = fresh();
+    for (const advancePayment of [
+        null, {}, { status: 'paid' }, { status: 'unknown', amountCents: 0 }, { status: 'not_received', amountCents: 0 },
+        { status: 'unknown', receivedOn: '2026-11-16' }, { status: 'received', amountCents: 0 },
+        { status: 'received', amountCents: -1 }, { status: 'received', amountCents: 1.5 },
+        { status: 'received', amountCents: '10000' }, { status: 'received', receivedOn: '' },
+        { status: 'received', receivedOn: '2027-02-30' }, { status: 'received', amount: 100 }
+    ]) {
+        assert.throws(() => D.prepareImport({ bookings: [{ ...booking, advancePayment }] }), hasCode('INVALID_ADVANCE_PAYMENT'));
+    }
+    assert.throws(() => D.prepareImport({ bookings: [{ ...booking, advancePayment: { status: 'received', amountCents: 30501 } }] }), hasCode('ADVANCE_EXCEEDS_TOTAL'));
+});
+
+test('updating an advance changes only its field on the latest root snapshot', () => {
+    const initial = root();
+    const current = clone(initial);
+    current.bookings[0].notes = 'new note on another phone';
+    current.bookings[0].price = 70.15;
+    current.futureMetadata.revision++;
+    current.bookings.push(fresh('NEW'));
+    const before = clone(current);
+    const advancePayment = D.buildAdvancePayment({ status: 'received', amount: '100', receivedOn: '2026-11-16' }, current.bookings[0]);
+    const result = D.reduceOperation(current, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment });
+    assert.deepEqual(result.bookings[0].advancePayment, advancePayment);
+    delete result.bookings[0].advancePayment;
+    assert.deepEqual(result, before);
+    assert.deepEqual(current, before);
+});
+
+test('two phones cannot overwrite different advance updates from the same old snapshot', () => {
+    const initial = root();
+    const first = { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000 } };
+    const second = { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'not_received' } };
+    const committed = D.reduceOperation(initial, first);
+    assert.throws(() => D.reduceOperation(committed, second), hasCode('RECORD_CHANGED'));
+    assert.deepEqual(D.reduceOperation(committed, first), committed);
+    assert.equal(committed.bookings[0].advancePayment.amountCents, 10000);
+});
+
+test('advance conflict checking distinguishes an absent raw field from an explicitly unknown status', () => {
+    const initial = root();
+    const unknown = D.reduceOperation(initial, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'unknown' } });
+    assert.throws(() => D.reduceOperation(unknown, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received' } }), hasCode('RECORD_CHANGED'));
+    const result = D.reduceOperation(unknown, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: { status: 'unknown' }, advancePayment: { status: 'received' } });
+    assert.equal(result.bookings[0].advancePayment.status, 'received');
+});
+
+test('advance editing rechecks the amount against the latest agreed total', () => {
+    const initial = root();
+    const operation = { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000 } };
+    const repriced = clone(initial);
+    repriced.bookings[0].price = 20;
+    assert.throws(() => D.reduceOperation(repriced, operation), hasCode('ADVANCE_EXCEEDS_TOTAL'));
+    assert.equal(repriced.bookings[0].price, 20);
+    assert.ok(!Object.hasOwn(repriced.bookings[0], 'advancePayment'));
+});
+
+test('advance update and an unrelated addition preserve both changes in either commit order', () => {
+    const initial = root();
+    const advance = { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000 } };
+    const add = { type: 'add', booking: fresh('NEW') };
+    assert.deepEqual(D.reduceOperation(D.reduceOperation(initial, advance), add), D.reduceOperation(D.reduceOperation(initial, add), advance));
+});
+
+test('advance updates cannot recreate a removed or missing booking', () => {
+    const initial = root();
+    const deleted = D.reduceOperation(initial, { type: 'delete', id: 'OLD', expectedBooking: initial.bookings[0] });
+    const operation = { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000 } };
+    assert.throws(() => D.reduceOperation(deleted, operation), hasCode('DELETED_BOOKING'));
+    assert.throws(() => D.reduceOperation({ bookings: [] }, operation), hasCode('BOOKING_NOT_FOUND'));
+    assert.equal(deleted.bookings.length, 0);
+});
+
+test('a stale delete cannot silently remove a newly recorded advance', () => {
+    const initial = root();
+    const updated = D.reduceOperation(initial, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000 } });
+    assert.throws(() => D.reduceOperation(updated, { type: 'delete', id: 'OLD', expectedBooking: initial.bookings[0] }), hasCode('RECORD_CHANGED'));
+});
+
+test('advance fields survive export/import, while a stale imported record cannot reset a recorded payment', () => {
+    const initial = root();
+    const updated = D.reduceOperation(initial, { type: 'advancePayment', id: 'OLD', expectedAdvancePayment: null, advancePayment: { status: 'received', amountCents: 10000, receivedOn: '2026-11-16' } });
+    const exported = D.exportData(updated);
+    const restored = D.reduceOperation({ bookings: [] }, { type: 'import', bookings: D.prepareImport(exported).bookings });
+    assert.deepEqual(restored.bookings, updated.bookings);
+    assert.throws(() => D.reduceOperation(updated, { type: 'import', bookings: initial.bookings }), hasCode('ID_CONFLICT'));
+    const deleted = D.reduceOperation(updated, { type: 'delete', id: 'OLD', expectedBooking: updated.bookings[0] });
+    assert.throws(() => D.reduceOperation(deleted, { type: 'import', bookings: exported.bookings }), hasCode('DELETED_BOOKING'));
+});

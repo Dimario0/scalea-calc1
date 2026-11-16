@@ -140,6 +140,7 @@
             nightlyRates,
             createdAt: input.createdAt === undefined ? new Date().toISOString() : input.createdAt
         };
+        if (input.advancePayment !== undefined) booking.advancePayment = copy(input.advancePayment);
         validateBooking(booking);
         return booking;
     }
@@ -165,6 +166,7 @@
             });
             if (!isCents(total) || (hasOwn(booking, 'totalCents') && total !== booking.totalCents)) fail('INVALID_BOOKING', 'Итог бронирования не совпадает с суммой ночей.');
         }
+        if (hasOwn(booking, 'advancePayment')) validateAdvancePayment(booking.advancePayment, booking);
         return booking;
     }
 
@@ -183,6 +185,63 @@
         const total = Math.round(getNights(booking.checkIn, booking.checkOut) * readPrice(booking.price)) * 100;
         if (!isCents(total)) fail('INVALID_PRICE', 'Сумма бронирования слишком велика.');
         return total;
+    }
+
+    function validateAdvancePayment(payment, booking) {
+        if (!isObject(payment) || !hasOwn(payment, 'status') || !['unknown', 'not_received', 'received'].includes(payment.status) ||
+            Object.keys(payment).some(key => !['status', 'amountCents', 'receivedOn'].includes(key))) {
+            fail('INVALID_ADVANCE_PAYMENT', 'Неверный формат предоплаты.');
+        }
+        const hasAmount = hasOwn(payment, 'amountCents');
+        const hasDate = hasOwn(payment, 'receivedOn');
+        if (payment.status !== 'received' && (hasAmount || hasDate)) {
+            fail('INVALID_ADVANCE_PAYMENT', 'Сумму и дату можно указать только для полученной предоплаты.');
+        }
+        if (hasAmount) {
+            if (!Number.isSafeInteger(payment.amountCents) || payment.amountCents <= 0) {
+                fail('INVALID_ADVANCE_PAYMENT', 'Полученная сумма должна быть положительной и указана до центов.');
+            }
+            if (payment.amountCents > getBookingTotalCents(booking)) fail('ADVANCE_EXCEEDS_TOTAL', 'Предоплата не может превышать согласованную стоимость проживания.');
+        }
+        if (hasDate) {
+            try { dateMillis(payment.receivedOn); }
+            catch { fail('INVALID_ADVANCE_PAYMENT', 'Проверьте дату получения предоплаты.'); }
+        }
+        return payment;
+    }
+
+    function buildAdvancePayment(input, booking) {
+        if (!isObject(input) || !isObject(booking)) fail('INVALID_ADVANCE_PAYMENT', 'Неверные данные предоплаты.');
+        const amountInput = input.amount === undefined ? '' : input.amount;
+        const dateInput = input.receivedOn === undefined ? '' : input.receivedOn;
+        if (typeof amountInput !== 'string' || typeof dateInput !== 'string') fail('INVALID_ADVANCE_PAYMENT', 'Проверьте сумму и дату предоплаты.');
+        const amount = amountInput.trim();
+        const receivedOn = dateInput.trim();
+        const payment = { status: input.status };
+        if (amount) {
+            if (!/^\d+(?:[.,]\d{1,2})?$/.test(amount)) fail('INVALID_ADVANCE_PAYMENT', 'Укажите сумму предоплаты не более чем с двумя знаками после запятой.');
+            const [whole, fraction = ''] = amount.replace(',', '.').split('.');
+            const exactCents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+            if (exactCents > BigInt(Number.MAX_SAFE_INTEGER)) fail('INVALID_ADVANCE_PAYMENT', 'Сумма предоплаты слишком велика.');
+            payment.amountCents = Number(exactCents);
+        }
+        if (receivedOn) payment.receivedOn = receivedOn;
+        validateAdvancePayment(payment, booking);
+        return payment;
+    }
+
+    function getAdvancePayment(booking) {
+        const payment = hasOwn(booking, 'advancePayment') ? validateAdvancePayment(booking.advancePayment, booking) : { status: 'unknown' };
+        if (payment.status === 'not_received') {
+            return { status: payment.status, amountCents: 0, receivedOn: null, remainingCents: getBookingTotalCents(booking) };
+        }
+        const amountCents = hasOwn(payment, 'amountCents') ? payment.amountCents : null;
+        return {
+            status: payment.status,
+            amountCents,
+            receivedOn: hasOwn(payment, 'receivedOn') ? payment.receivedOn : null,
+            remainingCents: amountCents === null ? null : getBookingTotalCents(booking) - amountCents
+        };
     }
 
     function getNightCents(booking, date) {
@@ -255,6 +314,19 @@
             if (!operation.expectedBooking || !equal(data.bookings[index], operation.expectedBooking)) fail('RECORD_CHANGED', 'Бронь изменилась на другом устройстве. Откройте карточку заново.');
             data.bookings.splice(index, 1);
             data.deletedBookingIds = Object.assign({}, data.deletedBookingIds || {}, { [operation.id]: true });
+        } else if (operation.type === 'advancePayment') {
+            validateId(operation.id);
+            if (data.deletedBookingIds && hasOwn(data.deletedBookingIds, operation.id)) fail('DELETED_BOOKING', 'Эта бронь уже удалена. Предоплата не сохранена.');
+            const booking = data.bookings.find(record => record.id === operation.id);
+            if (!booking) fail('BOOKING_NOT_FOUND', 'Бронирование больше не найдено. Предоплата не сохранена.');
+            const payment = copy(operation.advancePayment);
+            validateAdvancePayment(payment, booking);
+            const currentPayment = hasOwn(booking, 'advancePayment') ? booking.advancePayment : null;
+            // A retry after an acknowledged update is harmless. Different changes
+            // from a stale phone must be reviewed instead of overwriting each other.
+            if (equal(currentPayment, payment)) return data;
+            if (!equal(currentPayment, operation.expectedAdvancePayment)) fail('RECORD_CHANGED', 'Предоплата изменилась на другом устройстве. Откройте карточку заново.');
+            booking.advancePayment = payment;
         } else {
             fail('INVALID_DATA', 'Неизвестная операция сохранения.');
         }
@@ -264,7 +336,7 @@
     return Object.freeze({
         DIRECT_RATES_2027, monthNames, DataError,
         getNights, addDays, todayStr, quoteStay, buildBooking,
-        getBookingTotalCents, getNightCents, formatMoney,
+        getBookingTotalCents, getNightCents, formatMoney, buildAdvancePayment, getAdvancePayment,
         normalizeData, prepareImport, reduceOperation,
         exportData: normalizeData
     });

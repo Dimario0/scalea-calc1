@@ -8,12 +8,15 @@
     const initialDate = new Date();
     const state = { data: { bookings: [] }, currentDate: initialDate.getFullYear() < 2027 ? new Date(2027, 0, 1) : initialDate, selectedBooking: null };
     let loaded = false, online = false, saving = false, readError = false, writeError = false;
-    let adapter = null, auth = null, generation = 0, activeQuote = null;
+    let adapter = null, auth = null, generation = 0, activeQuote = null, advanceDirty = false;
     const checkInInput = $('checkIn'), checkOutInput = $('checkOut'), priceInput = $('price');
     const errors = {
         INVALID_DATE: 'Проверьте дату: нужен настоящий день календаря.',
         INVALID_DATES: 'Дата выезда должна быть позже даты заезда.',
         INVALID_PRICE: 'Укажите положительную цену за ночь, не более двух знаков после запятой.',
+        INVALID_ADVANCE_PAYMENT: 'Проверьте залог: сумма должна быть положительной, до двух знаков после запятой, а дата — настоящим днём календаря.',
+        ADVANCE_EXCEEDS_TOTAL: 'Залог не может превышать согласованную стоимость проживания.',
+        BOOKING_NOT_FOUND: 'Этой брони уже нет в календаре. Возможно, её удалили с другого телефона.',
         INVALID_BOOKING: 'В записи брони есть некорректные данные. Импорт отменён.',
         INVALID_DATA: 'Данные календаря имеют неподдерживаемый формат. Изменения заблокированы.',
         INVALID_IMPORT: 'Файл не похож на резервную копию калькулятора. Данные не изменены.',
@@ -21,7 +24,7 @@
         ID_CONFLICT: 'Бронь с таким номером уже существует с другими данными. Импорт отменён.',
         OVERLAP: 'Эти даты уже заняты. Календарь мог обновиться с другого телефона. Выберите другие даты.',
         RECORD_CHANGED: 'Эта бронь изменилась на другом устройстве. Откройте её карточку заново.',
-        DELETED_BOOKING: 'В копии есть ранее удалённая бронь. Импорт отменён, чтобы не восстановить её случайно.',
+        DELETED_BOOKING: 'Эта бронь уже удалена. Изменения отменены, чтобы не восстановить её случайно.',
         UNSUPPORTED_YEAR: 'Автоматические цены заданы только для ночей 2027 года. Укажите цену вручную.'
     };
     function messageFor(error) {
@@ -74,6 +77,7 @@
             state.data = D.normalizeData(raw);
             loaded = true; readError = false;
             render();
+            syncSelectedBooking();
         } catch (error) {
             loaded = false; readError = true;
             showError(error);
@@ -82,6 +86,18 @@
     }
     function receiveConnection(value) { online = value; renderSync(); }
     function receiveError(error) { readError = true; loaded = false; showError(error); renderSync(); }
+    function syncSelectedBooking() {
+        if (!state.selectedBooking || saving || !loaded) return;
+        const current = state.data.bookings.find(record => record.id === state.selectedBooking.id);
+        if (!current) { closeDeleteModal(); showError(errors.BOOKING_NOT_FOUND); return; }
+        const changed = JSON.stringify(current.advancePayment || null) !== JSON.stringify(state.selectedBooking.advancePayment || null);
+        if (!advanceDirty) { if (changed) openDeleteModal(current.id); return; }
+        // The saved-status badge always follows the latest listener value, even
+        // when another phone changes a field and then restores its original value.
+        $('modalCurrentAdvance').textContent = advanceLabel(current);
+        $('modalCurrentAdvance').className = advanceClasses(current);
+        $('deleteModalChanged').classList.toggle('hidden', !changed);
+    }
 
     async function runOperation(operation) {
         if (!canWrite()) {
@@ -99,7 +115,7 @@
             if (currentGeneration === generation) { writeError = true; showError(error); }
             return false;
         } finally {
-            if (currentGeneration === generation) { saving = false; renderSync(); }
+            if (currentGeneration === generation) { saving = false; syncSelectedBooking(); renderSync(); }
         }
     }
 
@@ -132,6 +148,8 @@
         $('bookingForm').reset();
         checkInInput.max = ''; checkOutInput.min = '';
         activeQuote = null; priceInput.value = '0'; $('liveTotal').textContent = '0 €';
+        $('depositStatus').value = 'unknown';
+        refreshAdvanceForm('deposit', null);
         $('quoteHint').textContent = 'Прямые цены 2027 · квартира целиком · до 4 гостей. Уборка и электричество включены.';
     }
     function quoteMatches() {
@@ -142,7 +160,39 @@
             const quote = quoteMatches() ? activeQuote.value : null;
             const booking = D.buildBooking({ id: 'draft', checkIn: checkInInput.value, checkOut: checkOutInput.value, price: priceInput.value, quote, createdAt: 'draft' });
             $('liveTotal').textContent = D.formatMoney(D.getBookingTotalCents(booking));
-        } catch { $('liveTotal').textContent = '0 €'; }
+            refreshAdvanceForm('deposit', booking);
+        } catch { $('liveTotal').textContent = '0 €'; refreshAdvanceForm('deposit', null); }
+    }
+    function advanceIds(prefix) {
+        return prefix === 'deposit' ? { status: 'depositStatus', amount: 'depositAmount', date: 'depositDate', fields: 'depositFields', summary: 'depositSummary' }
+            : { status: 'modalDepositStatus', amount: 'modalDepositAmount', date: 'modalDepositDate', fields: 'modalDepositFields', summary: 'modalDepositSummary' };
+    }
+    function readAdvanceForm(prefix, booking) {
+        const ids = advanceIds(prefix), status = $(ids.status).value || 'unknown';
+        return D.buildAdvancePayment({ status, amount: status === 'received' ? $(ids.amount).value : '', receivedOn: status === 'received' ? $(ids.date).value : '' }, booking);
+    }
+    function refreshAdvanceForm(prefix, booking) {
+        const ids = advanceIds(prefix), status = $(ids.status).value || 'unknown';
+        $(ids.fields).classList.toggle('hidden', status !== 'received');
+        let summary = status === 'unknown' ? 'Оплата не отмечена. Остаток пока неизвестен.' : 'Сначала укажите даты и стоимость проживания.';
+        if (booking) {
+            try {
+                const payment = D.getAdvancePayment({ ...booking, advancePayment: readAdvanceForm(prefix, booking) });
+                summary = payment.remainingCents === null ? (status === 'received' ? 'Залог получен. Укажите его сумму для расчёта остатка.' : 'Оплата не отмечена. Остаток пока неизвестен.')
+                    : 'Остаток после залога: ' + D.formatMoney(payment.remainingCents);
+            } catch (error) { summary = messageFor(error); }
+        }
+        $(ids.summary).textContent = summary;
+    }
+    function advanceLabel(booking) {
+        const payment = D.getAdvancePayment(booking);
+        if (payment.status === 'unknown') return 'Залог: не отмечено';
+        if (payment.status === 'not_received') return 'Залог не получен';
+        return '✓ Залог получен' + (payment.amountCents === null ? '' : ' · ' + D.formatMoney(payment.amountCents));
+    }
+    function advanceClasses(booking) {
+        const status = D.getAdvancePayment(booking).status;
+        return 'font-bold rounded-xl p-3 mb-3 ' + (status === 'received' ? 'text-emerald-800 bg-emerald-50' : status === 'not_received' ? 'text-amber-900 bg-amber-50' : 'text-slate-600 bg-slate-50');
     }
     function updateDatesFromTariffs() {
         activeQuote = null;
@@ -173,6 +223,8 @@
     checkInInput.addEventListener('change', () => handleDateLogic('in'));
     checkOutInput.addEventListener('change', () => handleDateLogic('out'));
     priceInput.addEventListener('input', () => { activeQuote = null; $('quoteHint').textContent = 'Цена указана вручную и будет сохранена для этой брони.'; calculateTotal(); });
+    ['depositStatus', 'depositAmount', 'depositDate'].forEach(id => $(id).addEventListener(id === 'depositStatus' ? 'change' : 'input', calculateTotal));
+    ['modalDepositStatus', 'modalDepositAmount', 'modalDepositDate'].forEach(id => $(id).addEventListener(id === 'modalDepositStatus' ? 'change' : 'input', () => { advanceDirty = true; refreshAdvanceForm('modal', state.selectedBooking); }));
     $('bookingForm').onsubmit = async event => {
         event.preventDefault();
         if (!canWrite()) { showError('Сейчас нет возможности сохранить бронь. Дождитесь соединения и загрузки.'); return; }
@@ -183,6 +235,7 @@
                 checkIn: checkInInput.value, checkOut: checkOutInput.value, price: priceInput.value,
                 quote: quoteMatches() ? activeQuote.value : null, createdAt: new Date().toISOString()
             });
+            booking.advancePayment = readAdvanceForm('deposit', booking);
         } catch (error) { showError(error); return; }
         if (await runOperation({ type: 'add', booking })) {
             resetForm();
@@ -242,11 +295,18 @@
                 if (date < booking.checkIn || date > booking.checkOut) return;
                 const bar = createDiv('booking-bar');
                 bar.onclick = event => { event.stopPropagation(); openDeleteModal(booking.id); };
-                const lastNight = D.addDays(booking.checkOut, -1), label = `${escapeHtml(booking.guest || 'Гость')}${booking.notes ? ' 📝' : ''} (${D.formatMoney(D.getBookingTotalCents(booking))})`;
+                const payment = D.getAdvancePayment(booking);
+                bar.title = `${booking.guest || 'Гость'} · ${advanceLabel(booking)}`;
+                const marker = payment.status === 'received' ? '✓' : payment.status === 'not_received' ? '⏳' : '';
+                const lastNight = D.addDays(booking.checkOut, -1), label = `${marker ? `<span class="shrink-0 pl-1" aria-label="${advanceLabel(booking)}">${marker}</span>` : ''}<span class="truncate px-1">${escapeHtml(booking.guest || 'Гость')}${booking.notes ? ' 📝' : ''} (${D.formatMoney(D.getBookingTotalCents(booking))})</span>`;
                 if (date === booking.checkOut) { bar.classList.add('booking-checkout'); bar.textContent = '← Выезд'; }
-                else if (date === booking.checkIn) { bar.classList.add('booking-start'); if (lastNight === date) bar.style.borderRadius = '6px'; bar.innerHTML = `<span class="truncate px-1">${label}</span>`; }
+                else if (date === booking.checkIn) { bar.classList.add('booking-start'); if (lastNight === date) bar.style.borderRadius = '6px'; bar.innerHTML = label; }
                 else if (date === lastNight) { bar.classList.add('booking-end'); bar.innerHTML = '&nbsp;'; }
                 else { bar.classList.add('booking-mid'); bar.innerHTML = '&nbsp;'; }
+                if (day === 1 && date > booking.checkIn && date < booking.checkOut) {
+                    bar.innerHTML = label;
+                    bar.classList.add('booking-visible-continuation');
+                }
                 cell.appendChild(bar);
             });
             grid.appendChild(cell);
@@ -276,12 +336,16 @@
         const booking = state.data.bookings.find(record => record.id === id);
         if (!booking) return;
         $('deleteModalError').classList.add('hidden');
+        $('deleteModalChanged').classList.add('hidden');
+        advanceDirty = false;
         state.selectedBooking = JSON.parse(JSON.stringify(booking));
         const nights = D.getNights(booking.checkIn, booking.checkOut);
+        const payment = D.getAdvancePayment(booking);
         const phone = String(booking.phone || ''), cleanPhone = phone.replace(/\D/g, '');
         $('deleteModalInfo').innerHTML = `<div class="font-black text-xl mb-2">${escapeHtml(booking.guest || 'Гость')}</div>
             <div class="text-xs text-slate-500 mb-2">${escapeHtml(booking.checkIn)} → ${escapeHtml(booking.checkOut)}</div>
             <div class="font-bold text-blue-700 mb-4">${nights} ночей · ${D.formatMoney(D.getBookingTotalCents(booking))}</div>
+            <div id="modalCurrentAdvance" class="${advanceClasses(booking)}">${advanceLabel(booking)}</div>
             ${cleanPhone ? `<a href="https://wa.me/${cleanPhone}" target="_blank" rel="noopener noreferrer" class="block text-sm text-emerald-700 bg-emerald-50 p-3 rounded-lg mb-2">WhatsApp · ${escapeHtml(phone)}</a>` : ''}
             ${booking.notes ? `<div class="text-xs bg-yellow-50 p-3 rounded-lg mb-3 text-left whitespace-pre-line">${escapeHtml(booking.notes)}</div>` : ''}
             <button id="copyBookingButton" class="w-full text-xs p-3 bg-slate-50 rounded-lg">Скопировать для клининга</button>`;
@@ -291,7 +355,23 @@
                 event.target.textContent = '✓ Скопировано';
             } catch { showError('Не удалось скопировать. Проверьте разрешение браузера на буфер обмена.'); }
         };
+        $('modalDepositStatus').value = payment.status;
+        $('modalDepositAmount').value = payment.status === 'received' && payment.amountCents !== null ? (payment.amountCents / 100).toFixed(2) : '';
+        $('modalDepositDate').value = payment.receivedOn || '';
+        refreshAdvanceForm('modal', booking);
         $('deleteModal').classList.remove('hidden'); renderSync();
+    };
+    $('advancePaymentForm').onsubmit = async event => {
+        event.preventDefault();
+        if (!state.selectedBooking) return;
+        const booking = state.selectedBooking;
+        let advancePayment;
+        try { advancePayment = readAdvanceForm('modal', booking); }
+        catch (error) { showError(error); return; }
+        if (await runOperation({ type: 'advancePayment', id: booking.id, expectedAdvancePayment: booking.advancePayment || null, advancePayment })) {
+            if (state.data.bookings.some(record => record.id === booking.id)) openDeleteModal(booking.id);
+            else closeDeleteModal();
+        }
     };
     window.closeDeleteModal = () => { if (!saving) { $('deleteModal').classList.add('hidden'); state.selectedBooking = null; } };
     $('confirmDeleteBtn').onclick = async () => {
