@@ -452,6 +452,53 @@ test('old bookings open with an unknown advance payment without writing or inven
     assert.equal(D.getAdvancePayment(saved).remainingCents, null);
 });
 
+test('legacy monthly statistics agree with the preserved card total without rewriting the booking', async () => {
+    for (const fixture of [
+        { extra: {}, june: '101,67 €', july: '203,33 €', total: '305 €' },
+        { extra: { totalCents: 10000 }, june: '33,34 €', july: '66,66 €', total: '100 €' }
+    ]) {
+        const old = booking('legacy', '2027-06-30', '2027-07-03', { price: 101.67, ...fixture.extra });
+        const w = new World({ bookings: [old] }), c = w.client('A');
+        c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut;
+        c.get('checkIn').dispatch('change');
+        assert.equal(c.get('displayMonth').textContent, 'Июнь');
+        assert.equal(c.get('statIncome').textContent, fixture.june);
+        assert.equal(c.get('statYearIncome').textContent, fixture.total);
+        assert.equal(c.get('statDays').textContent, '1 ночей');
+        c.context.openDeleteModal('legacy');
+        assert.ok(c.get('deleteModalInfo').innerHTML.includes(`3 ночей · ${fixture.total}`));
+        c.get('nextMonth').onclick();
+        assert.equal(c.get('displayMonth').textContent, 'Июль');
+        assert.equal(c.get('statIncome').textContent, fixture.july);
+        assert.equal(c.get('statYearIncome').textContent, fixture.total);
+        assert.equal(c.get('statDays').textContent, '2 ночей');
+        assert.equal(c.transactions.length, 0, 'Reading and changing months must not migrate historical records');
+        assert.deepEqual(w.data.bookings, [old]);
+        assert.deepEqual((await c.export()).bookings, [old]);
+        assert.equal(Object.hasOwn(w.data.bookings[0], 'nightlyRates'), false);
+    }
+});
+
+test('a legacy stay crossing New Year allocates the preserved total to the correct month and year', async () => {
+    const old = booking('legacy-year', '2026-12-31', '2027-01-03', { price: 101.67 });
+    const w = new World({ bookings: [old] }), c = w.client('A');
+    c.get('checkIn').value = old.checkIn; c.get('checkOut').value = old.checkOut;
+    c.get('checkIn').dispatch('change');
+    assert.equal(c.get('displayYear').textContent, 2026);
+    assert.equal(c.get('displayMonth').textContent, 'Декабрь');
+    assert.equal(c.get('statIncome').textContent, '101,67 €');
+    assert.equal(c.get('statYearIncome').textContent, '101,67 €');
+    c.get('nextMonth').onclick();
+    assert.equal(c.get('displayYear').textContent, 2027);
+    assert.equal(c.get('displayMonth').textContent, 'Январь');
+    assert.equal(c.get('statIncome').textContent, '203,33 €');
+    assert.equal(c.get('statYearIncome').textContent, '203,33 €');
+    c.context.openDeleteModal('legacy-year');
+    assert.ok(c.get('deleteModalInfo').innerHTML.includes('3 ночей · 305 €'));
+    assert.equal(c.transactions.length, 0);
+    assert.deepEqual((await c.export()).bookings, [old]);
+});
+
 test('new received advance is included in the accommodation total and resets only after acknowledgment', async () => {
     const w = new World(), c = w.client('A');
     const receivedOn = D.todayStr();

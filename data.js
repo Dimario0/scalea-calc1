@@ -386,7 +386,13 @@
             const rate = booking.nightlyRates.find(item => item && item.date === date && isCents(item.cents));
             if (rate) return rate.cents;
         }
-        return readPrice(booking.price) * 100;
+        // Older records only retain an average nightly price. Allocate their
+        // preserved agreed total, rather than multiplying that rounded average
+        // again and making monthly statistics disagree with the booking card.
+        const nights = getNights(booking.checkIn, booking.checkOut);
+        const totalCents = getBookingTotalCents(booking);
+        const index = (dateMillis(date) - dateMillis(booking.checkIn)) / DAY_MS;
+        return Math.floor(totalCents / nights) + (index < totalCents % nights ? 1 : 0);
     }
 
     function formatMoney(cents) {

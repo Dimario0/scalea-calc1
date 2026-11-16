@@ -59,6 +59,47 @@ test('July/August and August/September boundaries use each paid night', () => {
     assert.equal(D.quoteStay('2027-08-31', '2027-09-02').totalCents, 23500);
 });
 
+test('every month boundary charges the next tariff only after the first night in that month', () => {
+    // Independent calendar fixture: no production date arithmetic or tariff table.
+    const rates = [60, 60, 60, 60, 70, 85, 110, 140, 95, 65, 60, 60];
+    const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const date = (month, day) => `2027-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    for (let month = 1; month < 12; month++) {
+        const checkIn = date(month, monthDays[month - 1] - 1);
+        const first = date(month + 1, 1), second = date(month + 1, 2);
+        const beforeNewNight = D.quoteStay(checkIn, first);
+        const afterNewNight = D.quoteStay(checkIn, second);
+        assert.equal(beforeNewNight.nights, 2, checkIn);
+        assert.equal(beforeNewNight.totalCents, 2 * rates[month - 1] * 100, checkIn);
+        assert.equal(afterNewNight.nights, 3, checkIn);
+        assert.equal(afterNewNight.totalCents - beforeNewNight.totalCents, rates[month] * 100, first);
+        const saved = D.buildBooking({ id: `boundary-${month}`, checkIn, checkOut: second, price: afterNewNight.averagePrice, quote: afterNewNight });
+        assert.deepEqual(saved.nightlyRates, [
+            { date: checkIn, cents: rates[month - 1] * 100 },
+            { date: date(month, monthDays[month - 1]), cents: rates[month - 1] * 100 },
+            { date: first, cents: rates[month] * 100 }
+        ]);
+        assert.equal(D.getNightCents(saved, first), rates[month] * 100, first);
+        assert.equal(D.getNightCents(saved, second), 0, 'Checkout day is not another paid night');
+        assert.equal(D.getBookingTotalCents(saved), afterNewNight.totalCents);
+    }
+});
+
+test('June/July totals and monthly allocation survive export/import despite a rounded average', () => {
+    const quote = D.quoteStay('2027-06-27', '2027-07-03');
+    assert.equal(quote.nights, 6);
+    assert.equal(quote.averagePrice, 93.33);
+    assert.equal(quote.totalCents, 4 * 8500 + 2 * 11000);
+    const saved = fresh('ROUNDING', '2027-06-27', '2027-07-03');
+    assert.notEqual(Math.round(saved.price * 100) * 6, saved.totalCents, 'The displayed average cannot replace the exact sum of nights');
+    const restored = D.prepareImport(JSON.parse(JSON.stringify(D.exportData({ bookings: [saved] })))).bookings[0];
+    assert.equal(D.getBookingTotalCents(restored), 56000);
+    assert.equal(['2027-06-27', '2027-06-28', '2027-06-29', '2027-06-30'].reduce((sum, day) => sum + D.getNightCents(restored, day), 0), 34000);
+    assert.equal(D.getNightCents(restored, '2027-07-01') + D.getNightCents(restored, '2027-07-02'), 22000);
+    assert.equal(D.getNightCents(restored, '2027-06-26'), 0);
+    assert.equal(D.getNightCents(restored, '2027-07-03'), 0);
+});
+
 test('January checkout after the last 2027 night is allowed, other years do not borrow the 2027 tariff', () => {
     assert.equal(D.quoteStay('2027-12-31', '2028-01-01').totalCents, 6000);
     assert.throws(() => D.quoteStay('2027-12-31', '2028-01-02'), hasCode('UNSUPPORTED_YEAR'));
@@ -113,7 +154,8 @@ test('new manual prices reject fractions of a cent while historical precision is
     const old = legacy('PRECISE', '2026-05-01', '2026-05-04', 1.005);
     assert.equal(D.normalizeData({ bookings: [old] }).bookings[0].price, 1.005);
     assert.equal(D.getBookingTotalCents(old), Math.round(3 * 1.005) * 100);
-    assert.equal(D.getNightCents(old, '2026-05-01'), 1.005 * 100);
+    assert.deepEqual(['2026-05-01', '2026-05-02', '2026-05-03'].map(date => D.getNightCents(old, date)), [100, 100, 100]);
+    assert.deepEqual(D.exportData({ bookings: [old] }).bookings[0], old);
 });
 
 test('negative, zero, nonnumeric and infinite nightly prices are refused', () => {
@@ -128,6 +170,29 @@ test('historical total follows the old displayed integer euro total', () => {
     assert.equal(D.getNightCents(old, '2026-01-01'), 10167);
     assert.equal(D.getBookingTotalCents({ ...old, totalCents: 30501 }), 30501);
     assert.equal(D.getBookingTotalCents({ ...old, totalCents: 'bad' }), 30500);
+});
+
+test('old average-only records allocate the agreed total across months without changing saved data', () => {
+    for (const [price, expected] of [[101.67, [10167, 10167, 10166]], [101.51, [10167, 10167, 10166]], [101.49, [10134, 10133, 10133]], [101.01, [10100, 10100, 10100]]]) {
+        const old = legacy('OLD', '2026-06-30', '2026-07-03', price, { custom: { retained: true } });
+        const before = structuredClone(old);
+        const cents = ['2026-06-30', '2026-07-01', '2026-07-02'].map(date => D.getNightCents(old, date));
+        assert.deepEqual(cents, expected);
+        assert.equal(cents.reduce((sum, value) => sum + value, 0), D.getBookingTotalCents(old));
+        assert.equal(D.getNightCents(old, '2026-06-29'), 0);
+        assert.equal(D.getNightCents(old, '2026-07-03'), 0);
+        assert.deepEqual(old, before);
+        assert.deepEqual(D.exportData({ bookings: [old] }).bookings[0], before);
+    }
+});
+
+test('an explicit agreed total without nightly rates is preserved across a year boundary', () => {
+    const old = legacy('TOTAL', '2026-12-31', '2027-01-03', 110, { totalCents: 10000 });
+    assert.deepEqual(['2026-12-31', '2027-01-01', '2027-01-02'].map(date => D.getNightCents(old, date)), [3334, 3333, 3333]);
+    assert.equal(D.getNightCents(old, '2027-01-03'), 0);
+    assert.equal(old.price, 110);
+    assert.ok(!Object.hasOwn(old, 'nightlyRates'));
+    assert.equal(D.getBookingTotalCents(old), 10000);
 });
 
 test('formatMoney renders exact cents and compact whole euros', () => {
